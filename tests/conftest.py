@@ -80,19 +80,63 @@ def warehouse(tmp_path: Path) -> Database:
 
     pitching = pl.DataFrame(
         {
-            "game_pk": [1, 1, 3],
-            "team_id": [10, 20, 10],
-            "player_id": [900, 950, 900],
-            "is_starter": [True, True, True],
-            "outs_recorded": [18, 15, 12],
-            "pitches_thrown": [90, 80, 70],
-            "batters_faced": [24, 22, 18],
-            "strike_outs": [6, 4, 3],
-            "base_on_balls": [2, 3, 2],
-            "home_runs": [1, 0, 1],
-            "earned_runs": [3, 2, 4],
+            "game_pk": [1, 1, 3, 1, 2],
+            "team_id": [10, 20, 10, 10, 10],
+            "player_id": [900, 950, 900, 960, 961],
+            "is_starter": [True, True, True, False, False],
+            "outs_recorded": [18, 15, 12, 9, 6],
+            "pitches_thrown": [90, 80, 70, 25, 30],
+            "batters_faced": [24, 22, 18, 10, 8],
+            "strike_outs": [6, 4, 3, 2, 1],
+            "base_on_balls": [2, 3, 2, 1, 1],
+            "home_runs": [1, 0, 1, 0, 0],
+            "earned_runs": [3, 2, 4, 1, 0],
         }
     )
     db.upsert("pitching_lines", pitching, keys=["game_pk", "player_id"])
+
+    lineups = pl.DataFrame(
+        {
+            "game_pk": [1, 1, 1, 1],
+            "team_id": [10, 10, 20, 20],
+            "player_id": [500, 501, 600, 601],
+            "batting_order": [1, 2, 1, 2],
+            "is_starting_lineup": [True, True, True, False],
+        }
+    )
+    db.upsert("lineups", lineups, keys=["game_pk", "player_id"])
+
+    savant_metrics = pl.DataFrame(
+        {
+            "player_id": [500, 501, 600, 900],
+            "year": [2023, 2023, 2023, 2023],
+            "player_type": ["batter", "batter", "batter", "pitcher"],
+            "pa": [600, 550, 50, 700],  # 600 no llega al mínimo de 100 PA
+            "xwoba": [0.400, 0.360, 0.500, 0.290],
+            "woba": [0.390, 0.350, 0.480, 0.300],
+            "k_percent": [20.0, 15.0, 40.0, 25.0],
+            "bb_percent": [12.0, 8.0, 2.0, 7.0],
+            "barrel_batted_rate": [15.0, 9.0, 1.0, 6.0],
+            "hard_hit_percent": [50.0, 42.0, 20.0, 35.0],
+            "whiff_percent": [24.0, 18.0, 45.0, 30.0],
+            "oz_swing_percent": [26.0, 30.0, 45.0, 28.0],
+        }
+    )
+    db.upsert(
+        "savant_statcast_metrics", savant_metrics, keys=["player_id", "year", "player_type"]
+    )
+
+    savant_expected = pl.DataFrame(
+        {
+            "player_id": [900],
+            "year": [2023],
+            "player_type": ["pitcher"],
+            "pa": [700],
+            "xera": [3.50],
+        }
+    )
+    db.upsert(
+        "savant_expected_stats", savant_expected, keys=["player_id", "year", "player_type"]
+    )
 
     return db
