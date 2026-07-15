@@ -10,6 +10,7 @@ from rich.console import Console
 from mlb_quant.db import Database
 from mlb_quant.ingestion.lahman import LAHMAN_TABLES, LahmanSource
 from mlb_quant.ingestion.mlb_stats_api import MlbStatsApi
+from mlb_quant.ingestion.odds_api import ODDS_KEYS, OddsApiSource
 from mlb_quant.ingestion.savant import SAVANT_KEYS, PlayerType, SavantLeaderboards
 from mlb_quant.ingestion.statcast import PITCH_KEYS, StatcastSource
 from mlb_quant.ingestion.weather import WeatherSource
@@ -195,6 +196,38 @@ def boxscores(
         f"[green]lineups:[/green] {written_lineups} filas, "
         f"[green]pitching_lines:[/green] {written_pitching} filas "
         f"({len(game_pks)} juegos, {start_date} -> {end_date})."
+    )
+
+
+@ingest_app.command()
+def odds(
+    markets: str = typer.Option("h2h,totals", help="Mercados separados por coma."),
+    regions: str = typer.Option("us", help="Regiones de casas separadas por coma."),
+) -> None:
+    """Descarga snapshot de cuotas de The Odds API -> tabla ``odds_snapshots``.
+
+    Cada corrida añade un snapshot nuevo (no pisa los anteriores): el
+    histórico de snapshots es la base para medir CLV.
+
+    Requiere ``ODDS_API_KEY`` en ``.env``.
+    """
+    try:
+        source = OddsApiSource(api_key=get_settings().odds_api_key)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    df = source.fetch_odds(
+        markets=tuple(m.strip() for m in markets.split(",") if m.strip()),
+        regions=tuple(r.strip() for r in regions.split(",") if r.strip()),
+    )
+    if df.is_empty():
+        console.print("[yellow]La API no devolvió eventos (¿sin juegos próximos?).[/yellow]")
+        return
+    written = _database().upsert("odds_snapshots", df, keys=list(ODDS_KEYS))
+    console.print(
+        f"[green]odds_snapshots:[/green] {written} filas escritas "
+        f"({df['event_id'].n_unique()} eventos)."
     )
 
 

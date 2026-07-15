@@ -42,7 +42,7 @@ def run(
 
     Pasos: schedule (ayer y próximos días) -> boxscores de ayer ->
     statcast de ayer -> batter_games -> features de ayer -> clima ->
-    dashboard + reporte diario.
+    snapshot de cuotas (si hay ODDS_API_KEY) -> dashboard + reporte diario.
     """
     today = datetime.strptime(target, "%Y-%m-%d").date() if target else date.today()
     yesterday = today - timedelta(days=1)
@@ -60,6 +60,12 @@ def run(
         ("weather", lambda: weather(start=str(yesterday), end=str(horizon))),
         ("features", lambda: _build_features(str(yesterday))),
     ]
+    if get_settings().odds_api_key:
+        from mlb_quant.cli.ingest import odds
+
+        # Los defaults de typer son OptionInfo: en llamadas directas hay
+        # que pasar los argumentos explícitos.
+        steps.append(("odds", lambda: odds(markets="h2h,totals", regions="us")))
 
     failures = []
     for name, step in steps:

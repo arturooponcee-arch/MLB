@@ -23,6 +23,8 @@ cp .env.example .env
 
 ```bash
 poetry run mlb info       # verifica instalación y configuración
+poetry run mlb daily run  # pipeline diario: ingesta -> features -> reportes
+poetry run mlb bets scan  # cuotas en vivo vs. modelo -> apuestas EV+ (requiere ODDS_API_KEY)
 ```
 
 ## Estructura
