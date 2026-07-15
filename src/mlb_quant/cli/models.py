@@ -84,6 +84,36 @@ def backtest(
 
 
 @models_app.command()
+def explain(
+    top: int = typer.Option(15, help="Número de features a mostrar por dirección."),
+    side: str = typer.Option("home", help="home | away (lambda a explicar)."),
+) -> None:
+    """Coeficientes estandarizados del Poisson: qué mueve las carreras.
+
+    Features escaladas antes de la regresión: los coeficientes son
+    comparables entre sí (efecto por desviación estándar).
+    """
+    if side not in ("home", "away"):
+        raise typer.BadParameter("side debe ser home o away.")
+    db = Database(get_settings().duckdb_path)
+    features = _load_features(db)
+    model = PoissonRunsModel().fit(features)
+    ranked = model.coefficients(side)
+
+    table = Table(title=f"Poisson {side}: efecto en carreras (por desviación estándar)")
+    table.add_column("Feature", style="cyan")
+    table.add_column("Coeficiente", justify="right")
+    shown = pl.concat([ranked.head(top), ranked.tail(top)]).unique(
+        subset=["feature"], keep="first", maintain_order=True
+    )
+    for row in shown.iter_rows(named=True):
+        value = row["coefficient"]
+        color = "green" if value > 0 else "red"
+        table.add_row(row["feature"], f"[{color}]{value:+.4f}[/{color}]")
+    console.print(table)
+
+
+@models_app.command()
 def train(
     start: str = typer.Option(..., help="Primer día de entrenamiento (YYYY-MM-DD)."),
     end: str = typer.Option(..., help="Último día de entrenamiento (YYYY-MM-DD)."),

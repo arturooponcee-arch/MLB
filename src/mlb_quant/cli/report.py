@@ -9,13 +9,10 @@ import typer
 from rich.console import Console
 
 from mlb_quant.db import Database
-from mlb_quant.feature_engineering.upcoming import build_upcoming_features
 from mlb_quant.ingestion.mlb_stats_api import MlbStatsApi
 from mlb_quant.ingestion.weather import WeatherSource
-from mlb_quant.models.ensemble import CalibratedEnsembleWinModel
-from mlb_quant.models.poisson import PoissonRunsModel
+from mlb_quant.reporting.daily import generate_daily_report, predict_upcoming_games
 from mlb_quant.settings import get_settings
-from mlb_quant.simulations.monte_carlo import SimulationConfig, simulate_games
 from mlb_quant.visualization.dashboard import render_dashboard
 
 logger = logging.getLogger(__name__)
@@ -82,30 +79,7 @@ def _generate(db: Database, target: date, sims: int) -> tuple[date | None, int]:
     if game_date is None:
         render_dashboard(pl.DataFrame(), str(target), output)
         return None, 0
-
-    upcoming = build_upcoming_features(db, game_date, game_date)
-    training = db.query("SELECT * FROM features_game")
-
-    ensemble = CalibratedEnsembleWinModel().fit(training)
-    poisson = PoissonRunsModel().fit(training)
-
-    win = ensemble.predict_home_win(upcoming)
-    lambdas = poisson.predict_lambdas(upcoming)
-    sims_df = simulate_games(lambdas, SimulationConfig(n_sims=sims))
-
-    games = (
-        upcoming.select(
-            "game_pk",
-            "game_datetime_utc",
-            "home_team_name",
-            "away_team_name",
-            "home_probable_pitcher_name",
-            "away_probable_pitcher_name",
-        )
-        .join(win, on="game_pk")
-        .join(sims_df, on="game_pk")
-        .sort("game_datetime_utc")
-    )
+    games = predict_upcoming_games(db, game_date, sims)
     render_dashboard(games, str(game_date), output)
     return game_date, len(games)
 
@@ -148,3 +122,28 @@ def dashboard(
         if not watch:
             break
         time.sleep(interval)
+
+
+@report_app.command()
+def daily(
+    target: str = typer.Option(
+        None, "--date", help="Fecha objetivo (YYYY-MM-DD). Por defecto, hoy."
+    ),
+    sims: int = typer.Option(10_000, help="Simulaciones Monte Carlo por juego."),
+    k_line: float = typer.Option(5.5, help="Línea del prop de strikeouts."),
+) -> None:
+    """Reporte diario exportable (MD + CSV + Excel) en ``reports/daily/``."""
+    target_date = _parse_date(target) if target else date.today()
+    db = Database(get_settings().duckdb_path)
+    if not db.table_exists("features_game"):
+        console.print("[red]Tabla features_game vacía.[/red] Corre antes: mlb features build")
+        raise typer.Exit(code=1)
+    game_date = _next_game_date(db, target_date)
+    if game_date is None:
+        console.print(f"[yellow]Sin juegos próximos desde {target_date}.[/yellow]")
+        return
+    written = generate_daily_report(
+        db, game_date, get_settings().reports_dir / "daily", sims=sims, k_line=k_line
+    )
+    for path in written:
+        console.print(f"[green]->[/green] {path}")

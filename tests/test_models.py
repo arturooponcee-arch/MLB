@@ -78,6 +78,30 @@ def test_logistic_probabilities_valid(synthetic_features: pl.DataFrame) -> None:
     assert ((preds["p_home_win"] > 0) & (preds["p_home_win"] < 1)).all()
 
 
+def test_coefficients_ranked_and_named(synthetic_features: pl.DataFrame) -> None:
+    model = PoissonRunsModel(alpha=0.1).fit(synthetic_features)
+    coefs = model.coefficients("home")
+    assert set(coefs["feature"].to_list()) == {"strength_diff", "noise"}
+    # La señal domina al ruido y con signo positivo para el local.
+    top = coefs.row(0, named=True)
+    assert top["feature"] == "strength_diff"
+    assert top["coefficient"] > 0
+    assert coefs["coefficient"].to_list() == sorted(
+        coefs["coefficient"].to_list(), reverse=True
+    )
+
+
+def test_coefficients_invalid_side(synthetic_features: pl.DataFrame) -> None:
+    model = PoissonRunsModel().fit(synthetic_features)
+    with pytest.raises(ValueError, match="side"):
+        model.coefficients("centro")
+
+
+def test_coefficients_unfitted_raises() -> None:
+    with pytest.raises(ValueError, match="entrenar"):
+        PoissonRunsModel().coefficients("home")
+
+
 def test_save_load_roundtrip(
     synthetic_features: pl.DataFrame, tmp_path: Path
 ) -> None:

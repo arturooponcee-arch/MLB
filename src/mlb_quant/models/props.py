@@ -7,6 +7,7 @@ sale de la PMF Poisson (reutiliza la malla de ``markets``).
 """
 
 import logging
+from datetime import date
 
 import numpy as np
 import polars as pl
@@ -235,6 +236,68 @@ def build_batter_frame(db: Database, stat: str) -> pl.DataFrame:
 
     return base.with_columns(pl.col(stat).alias("target")).drop(
         "pa", "hits", "total_bases", "home_runs", "walks"
+    )
+
+
+def build_upcoming_pitcher_frame(db: Database, target_date: date) -> pl.DataFrame:
+    """Filas por abridor probable de una fecha, con las features del frame de K.
+
+    Args:
+        db: Warehouse con calendario del día.
+        target_date: Fecha objetivo.
+
+    Returns:
+        Una fila por probable con features side-agnostic (vacío si no hay
+        juegos o probables).
+    """
+    from mlb_quant.feature_engineering.upcoming import build_upcoming_features
+
+    upcoming = build_upcoming_features(db, target_date, target_date)
+    if upcoming.is_empty():
+        return upcoming
+    park_cols = [c for c in upcoming.columns if c.startswith("park_")]
+    sides = []
+    for side, opponent in (("home", "away"), ("away", "home")):
+        own = [c for c in upcoming.columns if c.startswith((f"{side}_sp_", f"{side}_spq_"))]
+        sides.append(
+            upcoming.filter(pl.col(f"{side}_probable_pitcher_id").is_not_null()).select(
+                "game_pk",
+                "game_date",
+                "season",
+                pl.col(f"{side}_team_id").alias("team_id"),
+                pl.col(f"{side}_probable_pitcher_id").alias("player_id"),
+                pl.col(f"{side}_probable_pitcher_name").alias("pitcher_name"),
+                pl.col(f"{opponent}_team_name").alias("opponent_name"),
+                *[pl.col(c).alias(c.removeprefix(f"{side}_")) for c in own],
+                *park_cols,
+            )
+        )
+    return pl.concat(sides, how="vertical_relaxed")
+
+
+def predict_upcoming_strikeouts(
+    db: Database, target_date: date, line: float = 5.5
+) -> pl.DataFrame:
+    """Entrena con historia previa y predice K de los probables de una fecha.
+
+    Args:
+        db: Warehouse completo.
+        target_date: Fecha objetivo.
+        line: Línea del prop.
+
+    Returns:
+        Por probable: ``lambda``, ``line``, ``p_over`` (vacío si no hay
+        juegos con probables).
+    """
+    upcoming = build_upcoming_pitcher_frame(db, target_date)
+    if upcoming.is_empty():
+        return upcoming
+    frame = build_pitcher_k_frame(db)
+    model = PropModel().fit(frame.filter(pl.col("game_date") < target_date))
+    lam = model.predict_lambda(upcoming)
+    return upcoming.join(lam, on=["game_pk", "player_id"]).with_columns(
+        pl.lit(line).alias("line"),
+        pl.Series("p_over", PropModel.probability_over(lam["lambda"].to_numpy(), line)),
     )
 
 

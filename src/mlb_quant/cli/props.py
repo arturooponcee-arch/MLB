@@ -1,7 +1,7 @@
 """Subcomandos ``mlb props``: props por jugador."""
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import polars as pl
 import typer
@@ -9,12 +9,12 @@ from rich.console import Console
 from rich.table import Table
 
 from mlb_quant.db import Database
-from mlb_quant.feature_engineering.upcoming import build_upcoming_features
 from mlb_quant.models.props import (
     BATTER_STATS,
     PropModel,
     build_batter_frame,
     build_pitcher_k_frame,
+    predict_upcoming_strikeouts,
 )
 from mlb_quant.preprocessing.batter_games import build_batter_games
 from mlb_quant.settings import get_settings
@@ -99,21 +99,10 @@ def strikeouts(
         datetime.strptime(target, "%Y-%m-%d").date() if target else date.today()
     )
     db = _database()
-
-    frame = build_pitcher_k_frame(db)
-    model = PropModel().fit(frame.filter(pl.col("game_date") < target_date))
-
-    upcoming = _upcoming_pitcher_frame(db, target_date)
-    if upcoming.is_empty():
+    merged = predict_upcoming_strikeouts(db, target_date, line=line)
+    if merged.is_empty():
         console.print("[yellow]Sin juegos con abridores probables en la fecha.[/yellow]")
         return
-    lam = model.predict_lambda(upcoming)
-    merged = upcoming.join(lam, on=["game_pk", "player_id"]).with_columns(
-        pl.lit(line).alias("line"),
-        pl.Series(
-            "p_over", PropModel.probability_over(lam["lambda"].to_numpy(), line)
-        ),
-    )
     db.upsert("props_pitcher_k", merged, keys=["game_pk", "player_id"])
 
     table = Table(title=f"Strikeouts del abridor — línea {line} — {target_date}")
@@ -131,28 +120,3 @@ def strikeouts(
             f"{1 / (1 - p_over):.2f}" if p_over < 0.999 else "—",
         )
     console.print(table)
-
-
-def _upcoming_pitcher_frame(db: Database, target_date: date) -> pl.DataFrame:
-    """Filas por abridor probable con las features del frame de K."""
-    upcoming = build_upcoming_features(db, target_date, target_date + timedelta(days=1))
-    if upcoming.is_empty():
-        return upcoming
-    park_cols = [c for c in upcoming.columns if c.startswith("park_")]
-    sides = []
-    for side, opponent in (("home", "away"), ("away", "home")):
-        own = [c for c in upcoming.columns if c.startswith((f"{side}_sp_", f"{side}_spq_"))]
-        sides.append(
-            upcoming.filter(pl.col(f"{side}_probable_pitcher_id").is_not_null()).select(
-                "game_pk",
-                "game_date",
-                "season",
-                pl.col(f"{side}_team_id").alias("team_id"),
-                pl.col(f"{side}_probable_pitcher_id").alias("player_id"),
-                pl.col(f"{side}_probable_pitcher_name").alias("pitcher_name"),
-                pl.col(f"{opponent}_team_name").alias("opponent_name"),
-                *[pl.col(c).alias(c.removeprefix(f"{side}_")) for c in own],
-                *park_cols,
-            )
-        )
-    return pl.concat(sides)

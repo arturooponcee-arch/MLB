@@ -78,6 +78,36 @@ class PoissonRunsModel:
         )
         return self
 
+    def coefficients(self, side: str = "home") -> pl.DataFrame:
+        """Coeficientes estandarizados de una de las regresiones.
+
+        Las features se escalan antes de la regresión, así que los
+        coeficientes son comparables entre sí (efecto en log-carreras por
+        desviación estándar).
+
+        Args:
+            side: ``home`` o ``away``.
+
+        Returns:
+            ``feature``, ``coefficient``, ordenado por efecto descendente.
+
+        Raises:
+            ValueError: Si ``side`` es inválido o el modelo no está entrenado.
+        """
+        if side not in ("home", "away"):
+            msg = f"side debe ser home o away, no {side!r}."
+            raise ValueError(msg)
+        if not self._columns:
+            msg = "Modelo sin entrenar."
+            raise ValueError(msg)
+        pipeline = self._home if side == "home" else self._away
+        return pl.DataFrame(
+            {
+                "feature": self._columns,
+                "coefficient": pipeline.named_steps["poisson"].coef_,
+            }
+        ).sort("coefficient", descending=True)
+
     def predict_lambdas(self, features: pl.DataFrame) -> pl.DataFrame:
         """Predice la tasa esperada de carreras de cada lado.
 

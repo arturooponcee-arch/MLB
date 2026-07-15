@@ -10,6 +10,7 @@ from rich.table import Table
 
 from mlb_quant import __version__
 from mlb_quant.cli.bets import bets_app
+from mlb_quant.cli.daily import daily_app
 from mlb_quant.cli.features import features_app
 from mlb_quant.cli.ingest import ingest_app
 from mlb_quant.cli.models import models_app
@@ -31,6 +32,7 @@ app.add_typer(simulate_app, name="simulate")
 app.add_typer(report_app, name="report")
 app.add_typer(props_app, name="props")
 app.add_typer(bets_app, name="bets")
+app.add_typer(daily_app, name="daily")
 console = Console()
 
 

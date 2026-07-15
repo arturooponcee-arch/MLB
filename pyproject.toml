@@ -21,6 +21,7 @@ dependencies = [
     "python-dotenv (>=1.0)",
     "scikit-learn (>=1.6)",
     "joblib (>=1.4)",
+    "xlsxwriter (>=3.2)",
 ]
 
 [project.scripts]
