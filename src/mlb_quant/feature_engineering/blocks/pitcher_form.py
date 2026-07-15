@@ -27,6 +27,44 @@ JOIN games g USING (game_pk)
 WHERE g.game_type = 'R' AND g.status = 'Final'
 """
 
+#: Columnas cuyas sumas rolling alimentan las fórmulas derivadas.
+SUM_COLUMNS: tuple[str, ...] = (
+    "outs_recorded",
+    "batters_faced",
+    "strike_outs",
+    "base_on_balls",
+    "home_runs",
+    "earned_runs",
+)
+
+
+def derived_expressions(windows: tuple[int, ...] = WINDOWS) -> list[pl.Expr]:
+    """Fórmulas de K%, BB%, IP, FIP y ERA desde sumas rolling por ventana.
+
+    Espera columnas ``_{col}_sum_{w}`` y ``_outs_mean_{w}`` ya calculadas.
+    Compartidas entre el bloque histórico y el builder de juegos futuros.
+    """
+    expressions = []
+    for w in windows:
+        ip = pl.col(f"_outs_recorded_sum_{w}") / 3.0
+        bf = pl.col(f"_batters_faced_sum_{w}")
+        expressions += [
+            (pl.col(f"_strike_outs_sum_{w}") / bf).alias(f"sp_k_pct_{w}"),
+            (pl.col(f"_base_on_balls_sum_{w}") / bf).alias(f"sp_bb_pct_{w}"),
+            (pl.col(f"_outs_mean_{w}") / 3.0).alias(f"sp_ip_per_start_{w}"),
+            (
+                (
+                    13 * pl.col(f"_home_runs_sum_{w}")
+                    + 3 * pl.col(f"_base_on_balls_sum_{w}")
+                    - 2 * pl.col(f"_strike_outs_sum_{w}")
+                )
+                / ip
+                + FIP_CONSTANT
+            ).alias(f"sp_fip_{w}"),
+            (9 * pl.col(f"_earned_runs_sum_{w}") / ip).alias(f"sp_era_{w}"),
+        ]
+    return expressions
+
 
 @register
 class PitcherFormBlock(FeatureBlock):
@@ -56,18 +94,10 @@ class PitcherFormBlock(FeatureBlock):
         # Rolling sobre APERTURAS solamente: ratios desde sumas acumuladas
         # (más estable que promediar ratios por juego).
         starts = appearances.filter(pl.col("is_starter"))
-        sum_columns = (
-            "outs_recorded",
-            "batters_faced",
-            "strike_outs",
-            "base_on_balls",
-            "home_runs",
-            "earned_runs",
-        )
         specs = [
             RollingSpec(column, w, "sum", f"_{column}_sum_{w}")
             for w in WINDOWS
-            for column in sum_columns
+            for column in SUM_COLUMNS
         ] + [
             spec
             for w in WINDOWS
@@ -79,27 +109,7 @@ class PitcherFormBlock(FeatureBlock):
         starts = add_lagged_rolling(
             starts, group_by="player_id", sort_by=["game_date", "game_pk"], specs=specs
         )
-
-        derived = []
-        for w in WINDOWS:
-            ip = pl.col(f"_outs_recorded_sum_{w}") / 3.0
-            bf = pl.col(f"_batters_faced_sum_{w}")
-            derived += [
-                (pl.col(f"_strike_outs_sum_{w}") / bf).alias(f"sp_k_pct_{w}"),
-                (pl.col(f"_base_on_balls_sum_{w}") / bf).alias(f"sp_bb_pct_{w}"),
-                (pl.col(f"_outs_mean_{w}") / 3.0).alias(f"sp_ip_per_start_{w}"),
-                (
-                    (
-                        13 * pl.col(f"_home_runs_sum_{w}")
-                        + 3 * pl.col(f"_base_on_balls_sum_{w}")
-                        - 2 * pl.col(f"_strike_outs_sum_{w}")
-                    )
-                    / ip
-                    + FIP_CONSTANT
-                ).alias(f"sp_fip_{w}"),
-                (9 * pl.col(f"_earned_runs_sum_{w}") / ip).alias(f"sp_era_{w}"),
-            ]
-        starts = starts.with_columns(derived)
+        starts = starts.with_columns(derived_expressions())
 
         # Juegos suspendidos/reanudados pueden traer dos "abridores" en el
         # boxscore; conservar el de más outs (el abridor real).
