@@ -48,7 +48,10 @@ def to_design_matrix(df: pl.DataFrame, columns: list[str]) -> pd.DataFrame:
         DataFrame pandas listo para sklearn.
     """
     present = [c for c in columns if c in df.columns]
-    x = df.select(present).to_pandas()
+    if present:
+        x = df.select(present).to_pandas()
+    else:
+        x = pd.DataFrame(index=range(df.height))
     for missing in (c for c in columns if c not in x.columns):
         x[missing] = float("nan")
     return x[columns]

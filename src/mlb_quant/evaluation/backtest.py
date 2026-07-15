@@ -12,6 +12,7 @@ import numpy as np
 import polars as pl
 
 from mlb_quant.evaluation.metrics import probability_metrics
+from mlb_quant.models.ensemble import CalibratedEnsembleWinModel
 from mlb_quant.models.logistic import LogisticWinModel
 from mlb_quant.models.markets import market_probabilities
 from mlb_quant.models.poisson import PoissonRunsModel
@@ -89,15 +90,18 @@ def walk_forward(
 
         poisson = PoissonRunsModel().fit(train)
         logistic = LogisticWinModel().fit(train)
+        ensemble = CalibratedEnsembleWinModel().fit(train)
 
         lambdas = poisson.predict_lambdas(test)
         markets = market_probabilities(lambdas, total_line=total_line)
         logit = logistic.predict_home_win(test).rename({"p_home_win": "p_home_logistic"})
+        ens = ensemble.predict_home_win(test).rename({"p_home_win": "p_home_ensemble"})
 
         frames.append(
             test.select("game_pk", "game_date", "home_score", "away_score")
             .join(markets, on="game_pk")
             .join(logit, on="game_pk")
+            .join(ens, on="game_pk")
         )
         logger.info(
             "Mes %s: train=%d juegos, predichos=%d.", month_start, len(train), len(test)
@@ -135,6 +139,9 @@ def _evaluate(
         ),
         "moneyline_logistic": probability_metrics(
             home_win, predictions["p_home_logistic"].to_numpy()
+        ),
+        "moneyline_ensemble": probability_metrics(
+            home_win, predictions["p_home_ensemble"].to_numpy()
         ),
         f"over_{total_line}_poisson": probability_metrics(
             over, predictions["p_over"].to_numpy()
