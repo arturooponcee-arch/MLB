@@ -9,9 +9,11 @@ from rich.console import Console
 from rich.table import Table
 
 from mlb_quant import __version__
+from mlb_quant.cli.bets import bets_app
 from mlb_quant.cli.features import features_app
 from mlb_quant.cli.ingest import ingest_app
 from mlb_quant.cli.models import models_app
+from mlb_quant.cli.props import props_app
 from mlb_quant.cli.report import report_app
 from mlb_quant.cli.simulate import simulate_app
 from mlb_quant.settings import get_settings
@@ -27,6 +29,8 @@ app.add_typer(features_app, name="features")
 app.add_typer(models_app, name="models")
 app.add_typer(simulate_app, name="simulate")
 app.add_typer(report_app, name="report")
+app.add_typer(props_app, name="props")
+app.add_typer(bets_app, name="bets")
 console = Console()
 
 
