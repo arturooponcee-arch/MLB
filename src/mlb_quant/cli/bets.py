@@ -1,12 +1,15 @@
 """Subcomandos ``mlb bets``: sizing manual con Kelly y escaneo EV+ del mercado."""
 
 from datetime import date, datetime
+from pathlib import Path
 
+import polars as pl
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from mlb_quant.bankroll.kelly import expected_value, kelly_fraction, recommend_stake
+from mlb_quant.betting.manual_odds import load_manual_odds, write_template
 from mlb_quant.betting.value import find_moneyline_value
 from mlb_quant.db import Database
 from mlb_quant.ingestion.odds_api import ODDS_KEYS, OddsApiSource
@@ -54,41 +57,75 @@ def kelly(
 
 
 @bets_app.command()
+def template(
+    target: str = typer.Option(None, "--date", help="Fecha de los juegos (YYYY-MM-DD). Hoy."),
+    output: str = typer.Option(
+        None, help="Ruta del CSV. Default: reports/daily/<fecha>_cuotas.csv."
+    ),
+) -> None:
+    """Genera plantilla CSV con los juegos del día para teclear cuotas del book.
+
+    Rellena ``odds_away`` y ``odds_home`` (decimales) y pásala a
+    ``mlb bets scan --odds-file``. Varias casas: repite la fila del juego
+    cambiando ``book``.
+    """
+    game_date = datetime.strptime(target, "%Y-%m-%d").date() if target else date.today()
+    db = Database(get_settings().duckdb_path)
+    if not db.table_exists("games"):
+        console.print("[red]Tabla games vacía.[/red] Corre antes: mlb ingest schedule")
+        raise typer.Exit(code=1)
+    games = db.query(
+        f"SELECT game_pk, game_datetime_utc, away_team_name, home_team_name "
+        f"FROM games WHERE game_date = DATE '{game_date}' ORDER BY game_datetime_utc"
+    )
+    if games.is_empty():
+        console.print(f"[yellow]Sin juegos programados el {game_date}.[/yellow]")
+        return
+    path = (
+        Path(output)
+        if output
+        else get_settings().reports_dir / "daily" / f"{game_date}_cuotas.csv"
+    )
+    n_games = write_template(path, games)
+    console.print(
+        f"[green]Plantilla escrita:[/green] {path} ({n_games} juegos). "
+        f"Rellena las cuotas y corre: mlb bets scan --odds-file {path}"
+    )
+
+
+@bets_app.command()
 def scan(
     target: str = typer.Option(None, "--date", help="Fecha de los juegos (YYYY-MM-DD). Hoy."),
+    odds_file: str = typer.Option(
+        None, "--odds-file", help="CSV de cuotas manuales (mlb bets template). Sin API."
+    ),
     bankroll: float = typer.Option(1000.0, help="Bankroll actual."),
     kelly_mult: float = typer.Option(0.5, "--kelly", help="Fracción de Kelly (0.5 = half)."),
     cap: float = typer.Option(0.05, help="Tope duro (fracción del bankroll)."),
     min_ev: float = typer.Option(0.02, help="EV mínimo por unidad para reportar."),
     sims: int = typer.Option(10_000, help="Simulaciones Monte Carlo por juego."),
 ) -> None:
-    """Escanea el mercado: cuotas en vivo vs. modelo -> apuestas moneyline EV+.
+    """Escanea el mercado: cuotas vs. modelo -> apuestas moneyline EV+.
 
-    Descarga un snapshot de The Odds API (se persiste en ``odds_snapshots``
-    para el histórico de CLV), predice los juegos de la fecha y reporta
-    los lados cuyo mejor precio supera la cuota justa del modelo.
-
-    Requiere ``ODDS_API_KEY`` en ``.env`` y el warehouse con features.
+    Las cuotas vienen de un CSV manual (``--odds-file``, sin API) o de
+    The Odds API (requiere ``ODDS_API_KEY``). En ambos casos el snapshot
+    se persiste en ``odds_snapshots``: el histórico del mercado alimenta
+    el análisis de CLV y el contraste modelo vs. mercado.
     """
     game_date = datetime.strptime(target, "%Y-%m-%d").date() if target else date.today()
     settings = get_settings()
-    try:
-        source = OddsApiSource(api_key=settings.odds_api_key)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    odds = source.fetch_odds()
-    if odds.is_empty():
-        console.print("[yellow]La API no devolvió cuotas (¿sin juegos próximos?).[/yellow]")
-        return
     db = Database(settings.duckdb_path)
-    db.upsert("odds_snapshots", odds, keys=list(ODDS_KEYS))
 
     games = predict_upcoming_games(db, game_date, sims)
     if games.is_empty():
         console.print(f"[yellow]Sin juegos programados el {game_date}.[/yellow]")
         return
+
+    odds = _load_odds(odds_file, games)
+    if odds.is_empty():
+        console.print("[yellow]Sin cuotas (¿API sin eventos?).[/yellow]")
+        return
+    db.upsert("odds_snapshots", odds, keys=list(ODDS_KEYS))
 
     value = find_moneyline_value(
         games,
@@ -131,3 +168,23 @@ def scan(
         f"[dim]{len(value)} apuesta(s) con EV > {min_ev:+.2%} de "
         f"{len(games)} juegos. Kelly x{kelly_mult}, tope {cap:.0%}.[/dim]"
     )
+
+
+def _load_odds(odds_file: str | None, games: pl.DataFrame) -> pl.DataFrame:
+    """Carga cuotas del CSV manual o de The Odds API, con errores legibles."""
+    if odds_file:
+        try:
+            return load_manual_odds(Path(odds_file), games)
+        except (ValueError, FileNotFoundError) as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+    try:
+        source = OddsApiSource(api_key=get_settings().odds_api_key)
+    except ValueError as exc:
+        console.print(
+            f"[red]{exc}[/red]\n"
+            "[dim]Sin API: mlb bets template genera un CSV para teclear cuotas "
+            "y pasarlo con --odds-file.[/dim]"
+        )
+        raise typer.Exit(code=1) from exc
+    return source.fetch_odds()

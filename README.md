@@ -66,11 +66,24 @@ poetry run mlb report daily           # juegos + props K en MD/CSV/Excel
 poetry run mlb report dashboard       # dashboard HTML
 ```
 
-### Apuestas: EV y Kelly
+### Apuestas: EV y Kelly (sin API de cuotas)
 
-El flujo por defecto **no requiere ninguna API de cuotas**: los reportes imprimen
-la cuota justa (1/p) de cada mercado; una apuesta solo tiene valor si tu book
-paga más. Para dimensionarla:
+El flujo por defecto **no requiere ninguna API**. Camino recomendado — cuotas
+manuales por CSV:
+
+```bash
+poetry run mlb bets template                     # CSV con los juegos del día
+# ... rellenas odds_away / odds_home con las cuotas de tu book ...
+poetry run mlb bets scan --odds-file reports/daily/<fecha>_cuotas.csv
+```
+
+`scan` cruza tus cuotas con el modelo, tabula las apuestas EV+ con stake Kelly
+y **persiste el snapshot en `odds_snapshots`**: aunque la fuente sea manual, el
+warehouse acumula el histórico del mercado — la base para medir CLV y para
+contrastar el modelo contra el mercado con el tiempo. Varias casas: repite la
+fila del juego cambiando la columna `book` (el escaneo toma el mejor precio).
+
+Para una apuesta suelta, sin CSV:
 
 ```bash
 poetry run mlb bets kelly --p 0.55 --odds 2.10 --bankroll 1000
@@ -78,10 +91,11 @@ poetry run mlb bets kelly --p 0.55 --odds 2.10 --bankroll 1000
 
 Devuelve EV, cuota justa y stakes Kelly (full/half/quarter con tope duro).
 
-Opcionalmente, con `ODDS_API_KEY` en `.env` (The Odds API), el escaneo es automático:
+Opcionalmente, con `ODDS_API_KEY` en `.env` (The Odds API), el escaneo baja las
+cuotas solo:
 
 ```bash
-poetry run mlb ingest odds            # snapshot de cuotas -> odds_snapshots (base CLV)
+poetry run mlb ingest odds            # snapshot de cuotas -> odds_snapshots
 poetry run mlb bets scan              # cuotas en vivo vs. modelo -> tabla EV+
 ```
 
