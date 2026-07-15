@@ -1,1 +1,1 @@
-"""Módulo evaluation (se implementa en fases posteriores)."""
+"""Evaluación: métricas de probabilidad y backtesting walk-forward."""

@@ -19,6 +19,8 @@ dependencies = [
     "pydantic (>=2.10)",
     "pydantic-settings (>=2.7)",
     "python-dotenv (>=1.0)",
+    "scikit-learn (>=1.6)",
+    "joblib (>=1.4)",
 ]
 
 [project.scripts]
@@ -42,7 +44,6 @@ pandas-stubs = ">=2.2"
 optional = true
 
 [tool.poetry.group.ml.dependencies]
-scikit-learn = ">=1.6"
 xgboost = ">=2.1"
 lightgbm = ">=4.5"
 catboost = ">=1.2"
@@ -109,7 +110,7 @@ packages = ["mlb_quant"]
 pretty = true
 
 [[tool.mypy.overrides]]
-module = ["pybaseball.*", "pyreadr.*"]
+module = ["pybaseball.*", "pyreadr.*", "sklearn.*", "joblib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

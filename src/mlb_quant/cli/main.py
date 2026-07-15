@@ -11,6 +11,7 @@ from rich.table import Table
 from mlb_quant import __version__
 from mlb_quant.cli.features import features_app
 from mlb_quant.cli.ingest import ingest_app
+from mlb_quant.cli.models import models_app
 from mlb_quant.settings import get_settings
 from mlb_quant.utils.logging import setup_logging
 
@@ -21,6 +22,7 @@ app = typer.Typer(
 )
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(features_app, name="features")
+app.add_typer(models_app, name="models")
 console = Console()
 
 
