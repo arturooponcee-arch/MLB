@@ -1,0 +1,107 @@
+{
+  "teams": {
+    "home": {
+      "team": { "id": 147, "name": "New York Yankees" },
+      "pitchers": [543037, 660001],
+      "battingOrder": [592450, 665742, 519317],
+      "players": {
+        "ID592450": {
+          "person": { "id": 592450, "fullName": "Aaron Judge" },
+          "position": { "abbreviation": "RF" },
+          "battingOrder": "100",
+          "stats": { "batting": { "hits": 2, "atBats": 4 }, "pitching": {}, "fielding": {} }
+        },
+        "ID665742": {
+          "person": { "id": 665742, "fullName": "Juan Soto" },
+          "position": { "abbreviation": "LF" },
+          "battingOrder": "200",
+          "stats": { "batting": { "hits": 1, "atBats": 3 }, "pitching": {}, "fielding": {} }
+        },
+        "ID700100": {
+          "person": { "id": 700100, "fullName": "Pinch Hitter" },
+          "position": { "abbreviation": "PH" },
+          "battingOrder": "201",
+          "stats": { "batting": { "hits": 0, "atBats": 1 }, "pitching": {}, "fielding": {} }
+        },
+        "ID543037": {
+          "person": { "id": 543037, "fullName": "Gerrit Cole" },
+          "position": { "abbreviation": "P" },
+          "stats": {
+            "batting": {},
+            "pitching": {
+              "inningsPitched": "6.0",
+              "outs": 18,
+              "numberOfPitches": 95,
+              "battersFaced": 24,
+              "strikeOuts": 8,
+              "baseOnBalls": 1,
+              "hits": 4,
+              "homeRuns": 1,
+              "runs": 2,
+              "earnedRuns": 2
+            },
+            "fielding": {}
+          }
+        },
+        "ID660001": {
+          "person": { "id": 660001, "fullName": "Relief Arm" },
+          "position": { "abbreviation": "P" },
+          "stats": {
+            "batting": {},
+            "pitching": {
+              "inningsPitched": "3.0",
+              "outs": 9,
+              "numberOfPitches": 40,
+              "battersFaced": 11,
+              "strikeOuts": 4,
+              "baseOnBalls": 0,
+              "hits": 1,
+              "homeRuns": 0,
+              "runs": 0,
+              "earnedRuns": 0
+            },
+            "fielding": {}
+          }
+        },
+        "ID800800": {
+          "person": { "id": 800800, "fullName": "Bench Guy" },
+          "position": { "abbreviation": "C" },
+          "stats": { "batting": {}, "pitching": {}, "fielding": {} }
+        }
+      }
+    },
+    "away": {
+      "team": { "id": 111, "name": "Boston Red Sox" },
+      "pitchers": [678394],
+      "battingOrder": [646240],
+      "players": {
+        "ID646240": {
+          "person": { "id": 646240, "fullName": "Rafael Devers" },
+          "position": { "abbreviation": "3B" },
+          "battingOrder": "300",
+          "stats": { "batting": { "hits": 1, "atBats": 4 }, "pitching": {}, "fielding": {} }
+        },
+        "ID678394": {
+          "person": { "id": 678394, "fullName": "Brayan Bello" },
+          "position": { "abbreviation": "P" },
+          "stats": {
+            "batting": {},
+            "pitching": {
+              "inningsPitched": "5.2",
+              "outs": 17,
+              "numberOfPitches": 101,
+              "battersFaced": 26,
+              "strikeOuts": 5,
+              "baseOnBalls": 3,
+              "hits": 7,
+              "homeRuns": 1,
+              "runs": 5,
+              "earnedRuns": 4
+            },
+            "fielding": {}
+          }
+        }
+      }
+    }
+  }
+}

@@ -52,6 +52,57 @@ TEAMS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "venue_name": pl.Utf8,
 }
 
+VENUES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "venue_id": pl.Int64,
+    "season": pl.Int32,
+    "name": pl.Utf8,
+    "city": pl.Utf8,
+    "state": pl.Utf8,
+    "latitude": pl.Float64,
+    "longitude": pl.Float64,
+    "elevation": pl.Float64,
+    "azimuth_angle": pl.Float64,
+    "roof_type": pl.Utf8,
+    "turf_type": pl.Utf8,
+    "capacity": pl.Int64,
+    "left_line": pl.Int64,
+    "left": pl.Int64,
+    "left_center": pl.Int64,
+    "center": pl.Int64,
+    "right_center": pl.Int64,
+    "right": pl.Int64,
+    "right_line": pl.Int64,
+}
+
+LINEUPS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "game_pk": pl.Int64,
+    "team_id": pl.Int64,
+    "player_id": pl.Int64,
+    "player_name": pl.Utf8,
+    "batting_order": pl.Int64,
+    "position": pl.Utf8,
+    "is_starting_lineup": pl.Boolean,
+    "is_substitute": pl.Boolean,
+}
+
+PITCHING_LINES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "game_pk": pl.Int64,
+    "team_id": pl.Int64,
+    "player_id": pl.Int64,
+    "player_name": pl.Utf8,
+    "is_starter": pl.Boolean,
+    "innings_pitched": pl.Utf8,
+    "outs_recorded": pl.Int64,
+    "pitches_thrown": pl.Int64,
+    "batters_faced": pl.Int64,
+    "strike_outs": pl.Int64,
+    "base_on_balls": pl.Int64,
+    "hits": pl.Int64,
+    "home_runs": pl.Int64,
+    "runs": pl.Int64,
+    "earned_runs": pl.Int64,
+}
+
 
 class MlbStatsApi(DataSource):
     """Acceso tipado a los endpoints públicos de la MLB Stats API."""
@@ -117,6 +168,58 @@ class MlbStatsApi(DataSource):
         logger.info("Equipos %d: %d filas.", season, len(rows))
         return pl.DataFrame(rows, schema=TEAMS_SCHEMA)
 
+    def fetch_venues(self, season: int) -> pl.DataFrame:
+        """Descarga los estadios con coordenadas, dimensiones y techo.
+
+        Incluye ``azimuth_angle`` (orientación del campo), clave para
+        interpretar la dirección del viento respecto al home plate.
+
+        Args:
+            season: Año de la temporada.
+
+        Returns:
+            Un estadio por fila, esquema :data:`VENUES_SCHEMA`.
+        """
+        payload = self._get(
+            "venues",
+            params={"sportId": 1, "season": season, "hydrate": "location,fieldInfo"},
+        )
+        rows = [self._parse_venue(venue, season) for venue in payload.get("venues", [])]
+        logger.info("Venues %d: %d filas.", season, len(rows))
+        return pl.DataFrame(rows, schema=VENUES_SCHEMA)
+
+    def fetch_boxscore(self, game_pk: int) -> tuple[pl.DataFrame, pl.DataFrame]:
+        """Descarga el boxscore de un juego: lineups y líneas de pitcheo.
+
+        Args:
+            game_pk: Identificador del juego.
+
+        Returns:
+            Tupla ``(lineups, pitching_lines)``. Lineups: una fila por
+            jugador con turno al bate. Pitching lines: una fila por pitcher
+            usado (base de features de fatiga y descanso).
+        """
+        payload = self._get(f"game/{game_pk}/boxscore", params={})
+        lineup_rows: list[dict[str, Any]] = []
+        pitching_rows: list[dict[str, Any]] = []
+        for side in ("home", "away"):
+            team = payload.get("teams", {}).get(side, {})
+            team_id = team.get("team", {}).get("id")
+            pitcher_ids: list[int] = team.get("pitchers", [])
+            for player in team.get("players", {}).values():
+                lineup_row = self._parse_lineup_entry(player, game_pk, team_id)
+                if lineup_row is not None:
+                    lineup_rows.append(lineup_row)
+                pitching_row = self._parse_pitching_line(
+                    player, game_pk, team_id, pitcher_ids
+                )
+                if pitching_row is not None:
+                    pitching_rows.append(pitching_row)
+        return (
+            pl.DataFrame(lineup_rows, schema=LINEUPS_SCHEMA),
+            pl.DataFrame(pitching_rows, schema=PITCHING_LINES_SCHEMA),
+        )
+
     # ------------------------------------------------------------------ #
     # Internos
     # ------------------------------------------------------------------ #
@@ -157,6 +260,93 @@ class MlbStatsApi(DataSource):
             "home_probable_pitcher_name": home_pp.get("fullName"),
             "away_probable_pitcher_id": away_pp.get("id"),
             "away_probable_pitcher_name": away_pp.get("fullName"),
+        }
+
+    @staticmethod
+    def _parse_venue(venue: dict[str, Any], season: int) -> dict[str, Any]:
+        """Aplana el JSON de un estadio al esquema de la tabla ``venues``."""
+        location = venue.get("location", {})
+        coords = location.get("defaultCoordinates", {})
+        field = venue.get("fieldInfo", {})
+        return {
+            "venue_id": venue.get("id"),
+            "season": season,
+            "name": venue.get("name"),
+            "city": location.get("city"),
+            "state": location.get("stateAbbrev"),
+            "latitude": coords.get("latitude"),
+            "longitude": coords.get("longitude"),
+            "elevation": location.get("elevation"),
+            "azimuth_angle": location.get("azimuthAngle"),
+            "roof_type": field.get("roofType"),
+            "turf_type": field.get("turfType"),
+            "capacity": field.get("capacity"),
+            "left_line": field.get("leftLine"),
+            "left": field.get("left"),
+            "left_center": field.get("leftCenter"),
+            "center": field.get("center"),
+            "right_center": field.get("rightCenter"),
+            "right": field.get("right"),
+            "right_line": field.get("rightLine"),
+        }
+
+    @staticmethod
+    def _parse_lineup_entry(
+        player: dict[str, Any], game_pk: int, team_id: int | None
+    ) -> dict[str, Any] | None:
+        """Convierte un jugador del boxscore en fila de ``lineups``.
+
+        ``battingOrder`` viene como string de 3 dígitos: ``"400"`` es el
+        4to bate titular; ``"401"`` el primer sustituto de ese turno.
+        Jugadores sin turno al bate (banca, pitchers con DH) se omiten.
+        """
+        raw_order = player.get("battingOrder")
+        if not raw_order:
+            return None
+        order = int(raw_order)
+        return {
+            "game_pk": game_pk,
+            "team_id": team_id,
+            "player_id": player.get("person", {}).get("id"),
+            "player_name": player.get("person", {}).get("fullName"),
+            "batting_order": order // 100,
+            "position": player.get("position", {}).get("abbreviation"),
+            "is_starting_lineup": order % 100 == 0,
+            "is_substitute": order % 100 != 0,
+        }
+
+    @staticmethod
+    def _parse_pitching_line(
+        player: dict[str, Any],
+        game_pk: int,
+        team_id: int | None,
+        pitcher_ids: list[int],
+    ) -> dict[str, Any] | None:
+        """Convierte un jugador del boxscore en fila de ``pitching_lines``.
+
+        Solo jugadores con stats de pitcheo en el juego. El abridor es el
+        primer id de la lista ``pitchers`` del equipo.
+        """
+        stats = player.get("stats", {}).get("pitching", {})
+        if not stats:
+            return None
+        player_id = player.get("person", {}).get("id")
+        return {
+            "game_pk": game_pk,
+            "team_id": team_id,
+            "player_id": player_id,
+            "player_name": player.get("person", {}).get("fullName"),
+            "is_starter": bool(pitcher_ids) and player_id == pitcher_ids[0],
+            "innings_pitched": stats.get("inningsPitched"),
+            "outs_recorded": stats.get("outs"),
+            "pitches_thrown": stats.get("numberOfPitches"),
+            "batters_faced": stats.get("battersFaced"),
+            "strike_outs": stats.get("strikeOuts"),
+            "base_on_balls": stats.get("baseOnBalls"),
+            "hits": stats.get("hits"),
+            "home_runs": stats.get("homeRuns"),
+            "runs": stats.get("runs"),
+            "earned_runs": stats.get("earnedRuns"),
         }
 
     @staticmethod

@@ -1,0 +1,36 @@
+{
+  "venues": [
+    {
+      "id": 3313,
+      "name": "Yankee Stadium",
+      "location": {
+        "city": "Bronx",
+        "stateAbbrev": "NY",
+        "defaultCoordinates": { "latitude": 40.82919482, "longitude": -73.9264977 },
+        "azimuthAngle": 75.38,
+        "elevation": 55
+      },
+      "fieldInfo": {
+        "capacity": 46537,
+        "turfType": "Grass",
+        "roofType": "Open",
+        "leftLine": 318,
+        "left": 359,
+        "leftCenter": 399,
+        "center": 408,
+        "rightCenter": 385,
+        "right": 353,
+        "rightLine": 314
+      },
+      "active": true,
+      "season": "2025"
+    },
+    {
+      "id": 9999,
+      "name": "Venue Sin Datos",
+      "location": { "city": "Nowhere" },
+      "active": true,
+      "season": "2025"
+    }
+  ]
+}

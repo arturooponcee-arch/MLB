@@ -85,6 +85,7 @@ class Database:
                 logger.info("Tabla %s creada con %d filas.", table, n_rows)
                 return n_rows
 
+            self._add_missing_columns(con, table)
             predicate = " AND ".join(f't."{k}" = d."{k}"' for k in keys)
             con.execute("BEGIN TRANSACTION")
             try:
@@ -104,6 +105,26 @@ class Database:
         """Ejecuta ``sql`` y devuelve el resultado como Polars DataFrame."""
         with self.connect() as con:
             return con.execute(sql).pl()
+
+    @staticmethod
+    def _add_missing_columns(con: duckdb.DuckDBPyConnection, table: str) -> None:
+        """Evoluciona el esquema: añade a ``table`` columnas nuevas de ``_incoming``.
+
+        Las columnas que la tabla tiene y el DataFrame no, las rellena
+        ``INSERT BY NAME`` con NULL; el caso inverso requiere ALTER TABLE.
+        """
+        existing = {
+            row[0]
+            for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                [table],
+            ).fetchall()
+        }
+        incoming = con.execute("DESCRIBE _incoming").fetchall()
+        for column_name, column_type, *_ in incoming:
+            if column_name not in existing:
+                con.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column_name}" {column_type}')
+                logger.info("Tabla %s: columna nueva %s (%s).", table, column_name, column_type)
 
     @staticmethod
     def _table_exists_on(con: duckdb.DuckDBPyConnection, table: str) -> bool:

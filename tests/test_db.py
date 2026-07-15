@@ -55,6 +55,24 @@ def test_upsert_missing_key_raises(db: Database) -> None:
         db.upsert("games", _sample(), keys=["no_existe"])
 
 
+def test_upsert_evolves_schema_with_new_columns(db: Database) -> None:
+    db.upsert("games", _sample(), keys=["game_pk"])
+    wider = pl.DataFrame(
+        {"game_pk": [3], "home_score": [9], "status": ["Final"], "xera": [3.21]}
+    )
+    db.upsert("games", wider, keys=["game_pk"])
+    result = db.query("SELECT game_pk, xera FROM games ORDER BY game_pk")
+    assert result["xera"].to_list() == [None, None, 3.21]
+
+
+def test_upsert_narrower_frame_fills_null(db: Database) -> None:
+    db.upsert("games", _sample(), keys=["game_pk"])
+    narrower = pl.DataFrame({"game_pk": [5], "status": ["Final"]})
+    db.upsert("games", narrower, keys=["game_pk"])
+    result = db.query("SELECT home_score FROM games WHERE game_pk = 5")
+    assert result["home_score"][0] is None
+
+
 def test_upsert_composite_keys(db: Database) -> None:
     df = pl.DataFrame({"team_id": [1, 1], "season": [2024, 2025], "name": ["A", "B"]})
     db.upsert("teams", df, keys=["team_id", "season"])

@@ -54,6 +54,7 @@ optional = true
 
 [tool.poetry.group.data.dependencies]
 pybaseball = ">=2.2"
+pyreadr = ">=0.5"
 beautifulsoup4 = ">=4.12"
 lxml = ">=5.3"
 
@@ -108,7 +109,7 @@ packages = ["mlb_quant"]
 pretty = true
 
 [[tool.mypy.overrides]]
-module = ["pybaseball.*"]
+module = ["pybaseball.*", "pyreadr.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

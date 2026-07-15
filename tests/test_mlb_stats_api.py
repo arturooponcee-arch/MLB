@@ -89,6 +89,88 @@ def test_fetch_schedule_empty_dates() -> None:
     assert "game_pk" in df.columns
 
 
+@pytest.fixture
+def venues_payload() -> dict[str, Any]:
+    return json.loads((FIXTURES / "venues_sample.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def boxscore_payload() -> dict[str, Any]:
+    return json.loads((FIXTURES / "boxscore_sample.json").read_text(encoding="utf-8"))
+
+
+def test_fetch_venues_parses_full_venue(venues_payload: dict[str, Any]) -> None:
+    api = MlbStatsApi(session=_FakeSession(venues_payload))  # type: ignore[arg-type]
+
+    df = api.fetch_venues(2025)
+
+    yankee = df.filter(df["venue_id"] == 3313)
+    assert yankee["latitude"][0] == pytest.approx(40.8292, abs=1e-3)
+    assert yankee["azimuth_angle"][0] == pytest.approx(75.38)
+    assert yankee["elevation"][0] == 55.0
+    assert yankee["roof_type"][0] == "Open"
+    assert yankee["center"][0] == 408
+
+
+def test_fetch_venues_handles_missing_fieldinfo(venues_payload: dict[str, Any]) -> None:
+    api = MlbStatsApi(session=_FakeSession(venues_payload))  # type: ignore[arg-type]
+
+    df = api.fetch_venues(2025)
+
+    bare = df.filter(df["venue_id"] == 9999)
+    assert bare["latitude"][0] is None
+    assert bare["roof_type"][0] is None
+    assert bare["city"][0] == "Nowhere"
+
+
+def test_fetch_boxscore_lineups(boxscore_payload: dict[str, Any]) -> None:
+    api = MlbStatsApi(session=_FakeSession(boxscore_payload))  # type: ignore[arg-type]
+
+    lineups, _ = api.fetch_boxscore(777001)
+
+    assert len(lineups) == 4  # 3 titulares + 1 emergente; banca y pitchers fuera
+    judge = lineups.filter(lineups["player_id"] == 592450)
+    assert judge["batting_order"][0] == 1
+    assert judge["is_starting_lineup"][0] is True
+    pinch = lineups.filter(lineups["player_id"] == 700100)
+    assert pinch["batting_order"][0] == 2
+    assert pinch["is_substitute"][0] is True
+
+
+def test_fetch_boxscore_pitching_lines(boxscore_payload: dict[str, Any]) -> None:
+    api = MlbStatsApi(session=_FakeSession(boxscore_payload))  # type: ignore[arg-type]
+
+    _, pitching = api.fetch_boxscore(777001)
+
+    assert len(pitching) == 3
+    cole = pitching.filter(pitching["player_id"] == 543037)
+    assert cole["is_starter"][0] is True
+    assert cole["pitches_thrown"][0] == 95
+    assert cole["outs_recorded"][0] == 18
+    relief = pitching.filter(pitching["player_id"] == 660001)
+    assert relief["is_starter"][0] is False
+    bello = pitching.filter(pitching["player_id"] == 678394)
+    assert bello["is_starter"][0] is True
+    assert bello["team_id"][0] == 111
+
+
+@pytest.mark.integration
+def test_fetch_venues_real_api() -> None:
+    api = MlbStatsApi()
+    df = api.fetch_venues(2025)
+    assert len(df) >= 30
+    assert df["latitude"].null_count() < len(df)
+
+
+@pytest.mark.integration
+def test_fetch_boxscore_real_api() -> None:
+    api = MlbStatsApi()
+    lineups, pitching = api.fetch_boxscore(777283)
+    assert len(lineups) >= 18
+    assert len(pitching) >= 2
+    assert pitching.filter(pitching["is_starter"]).height == 2
+
+
 @pytest.mark.integration
 def test_fetch_schedule_real_api() -> None:
     """Contra el servidor real: 2025-07-01 tuvo juegos de temporada regular."""
