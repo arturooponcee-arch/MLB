@@ -1,0 +1,45 @@
+# Entorno
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Datos y artefactos (pesados, reproducibles)
+data/raw/*
+data/processed/*
+data/external/*
+!data/**/.gitkeep
+database/*.duckdb
+database/*.duckdb.wal
+logs/*.log*
+models/*
+!models/.gitkeep
+outputs/*
+!outputs/.gitkeep
+reports/*
+!reports/.gitkeep
+mlruns/
+
+# Hydra
+multirun/
+.hydra/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE / SO
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

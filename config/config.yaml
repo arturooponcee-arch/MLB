@@ -1,0 +1,18 @@
+# Configuración base de Hydra.
+# Parámetros de pipelines y modelos. Secretos: NUNCA aquí (usar .env).
+defaults:
+  - _self_
+
+project:
+  name: mlb-quant
+  seed: 42
+
+seasons:
+  start: 2018
+  end: 2026
+
+ingestion:
+  # Reintentos y pausas para respetar rate limits de las fuentes.
+  max_retries: 3
+  backoff_seconds: 2.0
+  request_timeout: 30
