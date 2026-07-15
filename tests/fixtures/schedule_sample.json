@@ -1,0 +1,52 @@
+{
+  "totalGames": 2,
+  "dates": [
+    {
+      "date": "2025-07-01",
+      "games": [
+        {
+          "gamePk": 777001,
+          "season": "2025",
+          "officialDate": "2025-07-01",
+          "gameDate": "2025-07-01T23:05:00Z",
+          "gameType": "R",
+          "doubleHeader": "N",
+          "dayNight": "night",
+          "status": { "detailedState": "Final" },
+          "venue": { "id": 3313, "name": "Yankee Stadium" },
+          "teams": {
+            "home": {
+              "team": { "id": 147, "name": "New York Yankees" },
+              "score": 5,
+              "probablePitcher": { "id": 543037, "fullName": "Gerrit Cole" }
+            },
+            "away": {
+              "team": { "id": 111, "name": "Boston Red Sox" },
+              "score": 3,
+              "probablePitcher": { "id": 678394, "fullName": "Brayan Bello" }
+            }
+          }
+        },
+        {
+          "gamePk": 777002,
+          "season": "2025",
+          "officialDate": "2025-07-01",
+          "gameDate": "2025-07-02T01:10:00Z",
+          "gameType": "R",
+          "doubleHeader": "N",
+          "dayNight": "night",
+          "status": { "detailedState": "Scheduled" },
+          "venue": { "id": 22, "name": "Dodger Stadium" },
+          "teams": {
+            "home": {
+              "team": { "id": 119, "name": "Los Angeles Dodgers" }
+            },
+            "away": {
+              "team": { "id": 137, "name": "San Francisco Giants" }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

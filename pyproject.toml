@@ -34,6 +34,7 @@ ruff = ">=0.8"
 mypy = ">=1.13"
 pre-commit = ">=4.0"
 types-requests = ">=2.32"
+pandas-stubs = ">=2.2"
 
 # Grupos opcionales: se instalan cuando la fase los necesite.
 # poetry install --with ml,data
@@ -106,9 +107,13 @@ mypy_path = "src"
 packages = ["mlb_quant"]
 pretty = true
 
+[[tool.mypy.overrides]]
+module = ["pybaseball.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -m 'not integration'"
 markers = [
-    "integration: tests que tocan red o servicios externos",
+    "integration: tests que tocan red o servicios externos (correr con: pytest -m integration)",
 ]
