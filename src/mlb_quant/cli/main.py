@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mlb_quant import __version__
+from mlb_quant.cli.features import features_app
 from mlb_quant.cli.ingest import ingest_app
 from mlb_quant.settings import get_settings
 from mlb_quant.utils.logging import setup_logging
@@ -19,6 +20,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(ingest_app, name="ingest")
+app.add_typer(features_app, name="features")
 console = Console()
 
 

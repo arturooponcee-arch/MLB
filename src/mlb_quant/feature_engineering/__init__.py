@@ -1,1 +1,1 @@
-"""Módulo feature engineering (se implementa en fases posteriores)."""
+"""Feature engineering: bloques declarativos y ensamblado de matrices."""
