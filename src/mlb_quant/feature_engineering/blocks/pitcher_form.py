@@ -101,5 +101,11 @@ class PitcherFormBlock(FeatureBlock):
             ]
         starts = starts.with_columns(derived)
 
+        # Juegos suspendidos/reanudados pueden traer dos "abridores" en el
+        # boxscore; conservar el de más outs (el abridor real).
+        starts = starts.sort("outs_recorded", descending=True).unique(
+            subset=["game_pk", "team_id"], keep="first", maintain_order=True
+        )
+
         feature_columns = ["sp_days_rest"] + [c for c in starts.columns if c.startswith("sp_")]
         return starts.select(["game_pk", "team_id", *dict.fromkeys(feature_columns)])

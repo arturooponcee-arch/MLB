@@ -79,6 +79,45 @@ def test_fetch_schedule_requests_probable_pitcher_hydrate(
     assert params["endDate"] == "2025-07-02"
 
 
+def test_fetch_schedule_deduplicates_postponed_games() -> None:
+    """Juego pospuesto: mismo game_pk en dos fechas. Gana la entrada Final."""
+    payload = {
+        "dates": [
+            {
+                "games": [
+                    {
+                        "gamePk": 555,
+                        "season": "2024",
+                        "officialDate": "2024-04-02",
+                        "gameDate": "2024-04-02T23:10:00Z",
+                        "status": {"detailedState": "Postponed"},
+                        "teams": {"home": {}, "away": {}},
+                    }
+                ]
+            },
+            {
+                "games": [
+                    {
+                        "gamePk": 555,
+                        "season": "2024",
+                        "officialDate": "2024-04-04",
+                        "gameDate": "2024-04-04T16:10:00Z",
+                        "status": {"detailedState": "Final"},
+                        "teams": {"home": {"score": 3}, "away": {"score": 1}},
+                    }
+                ]
+            },
+        ]
+    }
+    api = MlbStatsApi(session=_FakeSession(payload))  # type: ignore[arg-type]
+
+    df = api.fetch_schedule(date(2024, 4, 2), date(2024, 4, 4))
+
+    assert len(df) == 1
+    assert df["status"][0] == "Final"
+    assert df["game_date"][0] == date(2024, 4, 4)
+
+
 def test_fetch_schedule_empty_dates() -> None:
     session = _FakeSession({"dates": []})
     api = MlbStatsApi(session=session)  # type: ignore[arg-type]

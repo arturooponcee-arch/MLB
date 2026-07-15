@@ -149,10 +149,15 @@ class MlbStatsApi(DataSource):
             for day in payload.get("dates", [])
             for game in day.get("games", [])
         ]
-        logger.info(
-            "Calendario %s -> %s: %d juegos.", start_date, end_date, len(rows)
-        )
-        return pl.DataFrame(rows, schema=SCHEDULE_SCHEMA)
+        df = pl.DataFrame(rows, schema=SCHEDULE_SCHEMA)
+        # Juegos pospuestos aparecen dos veces con el mismo game_pk (fecha
+        # original y reprogramada). Conservar la entrada jugada (Final) y,
+        # en empate, la de fecha más reciente.
+        df = df.sort(
+            (pl.col("status") == "Final").cast(pl.Int8), pl.col("game_datetime_utc")
+        ).unique(subset=["game_pk"], keep="last", maintain_order=True)
+        logger.info("Calendario %s -> %s: %d juegos.", start_date, end_date, len(df))
+        return df
 
     def fetch_teams(self, season: int) -> pl.DataFrame:
         """Descarga los 30 equipos MLB de una temporada.

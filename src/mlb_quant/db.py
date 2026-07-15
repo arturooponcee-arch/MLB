@@ -77,6 +77,18 @@ class Database:
         if missing:
             msg = f"Claves ausentes en el DataFrame: {missing}"
             raise ValueError(msg)
+        incoming_keys = df[list(keys)] if isinstance(df, pd.DataFrame) else df.select(keys)
+        n_unique = (
+            len(incoming_keys.drop_duplicates())
+            if isinstance(incoming_keys, pd.DataFrame)
+            else incoming_keys.n_unique()
+        )
+        if n_unique != n_rows:
+            msg = (
+                f"El DataFrame entrante trae claves duplicadas para {table} "
+                f"({n_rows - n_unique} repetidas). Deduplica en la fuente."
+            )
+            raise ValueError(msg)
 
         with self.connect() as con:
             con.register("_incoming", df)

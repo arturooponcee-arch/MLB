@@ -55,6 +55,12 @@ def test_upsert_missing_key_raises(db: Database) -> None:
         db.upsert("games", _sample(), keys=["no_existe"])
 
 
+def test_upsert_duplicate_incoming_keys_raises(db: Database) -> None:
+    duplicated = pl.concat([_sample(), _sample()])
+    with pytest.raises(ValueError, match="duplicadas"):
+        db.upsert("games", duplicated, keys=["game_pk"])
+
+
 def test_upsert_evolves_schema_with_new_columns(db: Database) -> None:
     db.upsert("games", _sample(), keys=["game_pk"])
     wider = pl.DataFrame(
