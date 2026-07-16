@@ -1,6 +1,6 @@
 """Fixtures compartidas: warehouse sintético para tests de features."""
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -141,6 +141,50 @@ def warehouse(tmp_path: Path) -> Database:
     )
     db.upsert(
         "savant_expected_stats", savant_expected, keys=["player_id", "year", "player_type"]
+    )
+
+    # Pitch-by-pitch de g1 (2024-06-01), verificable a mano.
+    # Pitcher 900 (R, local -> lanza en Top): 6 pitches.
+    #   whiffs 2 (swinging_strike x2), swings 4 (+foul, hit_into_play),
+    #   called 1, FF: 95+93+94 -> velo media 94.0,
+    #   xwOBA vs: (0.900 contacto + 0.0 K) / 2 PA = 0.45.
+    # Pitcher 950 (L, visita -> lanza en Bot): 2 pitches.
+    #   Equipo 10 vs L: 0.300 / 1 PA. Equipo 20 vs R: 0.9 / 2 PA.
+    g1 = datetime(2024, 6, 1)
+    statcast = pl.DataFrame(
+        {
+            "game_pk": [1, 1, 1, 1, 1, 1, 1, 1],
+            "at_bat_number": [1, 1, 1, 2, 3, 3, 10, 11],
+            "pitch_number": [1, 2, 3, 1, 1, 2, 1, 1],
+            "game_date": [g1] * 8,
+            "pitcher": [900, 900, 900, 900, 900, 900, 950, 950],
+            # Ids que no chocan con los asserts de test_props (500/501).
+            "batter": [600, 600, 600, 601, 600, 600, 502, 503],
+            "p_throws": ["R", "R", "R", "R", "R", "R", "L", "L"],
+            "stand": ["L", "L", "L", "R", "R", "R", "R", "R"],
+            "inning_topbot": ["Top", "Top", "Top", "Top", "Top", "Top", "Bot", "Bot"],
+            "pitch_type": ["FF", "FF", "SL", "SL", "CH", "FF", "FF", "SI"],
+            "release_speed": [95.0, 93.0, 84.0, 85.0, 88.0, 94.0, 91.0, 90.5],
+            "description": [
+                "swinging_strike",
+                "called_strike",
+                "foul",
+                "hit_into_play",
+                "ball",
+                "swinging_strike",
+                "hit_into_play",
+                "called_strike",
+            ],
+            "events": [None, None, None, "double", None, "strikeout", "single", None],
+            "estimated_woba_using_speedangle": [
+                None, None, None, 0.900, None, None, 0.300, None,
+            ],
+            "woba_value": [None, None, None, 2.0, None, 0.0, 0.9, None],
+            "woba_denom": [None, None, None, 1, None, 1, 1, None],
+        }
+    )
+    db.upsert(
+        "statcast_pitches", statcast, keys=["game_pk", "at_bat_number", "pitch_number"]
     )
 
     return db

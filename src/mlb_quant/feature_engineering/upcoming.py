@@ -26,11 +26,22 @@ from mlb_quant.feature_engineering.blocks.pitcher_form import (
     WINDOWS,
     derived_expressions,
 )
+from mlb_quant.feature_engineering.blocks.platoon import (
+    HANDS_SQL,
+    LOOKBACK_DAYS,
+    TEAM_DAILY_SQL,
+)
 from mlb_quant.feature_engineering.blocks.rest_travel import (
     VENUE_COORDS_SQL,
     haversine_km,
     team_travel_history,
     tz_offset,
+)
+from mlb_quant.feature_engineering.blocks.sp_statcast import (
+    STATCAST_SUM_COLUMNS,
+    STATCAST_WINDOWS,
+    attach_start_counts,
+    statcast_derived_expressions,
 )
 from mlb_quant.feature_engineering.blocks.team_form import _LONG_SQL as TEAM_LONG_SQL
 from mlb_quant.feature_engineering.blocks.team_form import WINDOWS as TEAM_WINDOWS
@@ -101,6 +112,8 @@ def build_upcoming_features(db: Database, start: date, end: date) -> pl.DataFram
     base = _join_pitchers(base, db)
     base = _join_elo(base, db)
     base = _join_rest_travel(base, db)
+    base = _join_sp_statcast(base, db)
+    base = _join_platoon(base, db)
     return base
 
 
@@ -204,6 +217,78 @@ def _join_rest_travel(base: pl.DataFrame, db: Database) -> pl.DataFrame:
             f"{side}_last_trip",
         )
     return base.drop("latitude", "longitude")
+
+
+def _join_sp_statcast(base: pl.DataFrame, db: Database) -> pl.DataFrame:
+    """Métricas Statcast vigentes del pitcher probable (últimas N aperturas)."""
+    if not db.table_exists("statcast_pitches"):
+        logger.warning("Bloque sp_statcast omitido: falta la tabla statcast_pitches.")
+        return base
+    starts = attach_start_counts(db).sort("game_date", "game_pk")
+    aggregations = [
+        pl.col(c).tail(w).sum().alias(f"_{c}_sum_{w}")
+        for w in STATCAST_WINDOWS
+        for c in STATCAST_SUM_COLUMNS
+    ]
+    state = (
+        starts.group_by("player_id")
+        .agg(aggregations)
+        .with_columns(statcast_derived_expressions())
+        .select("player_id", pl.selectors.starts_with("sp_"))
+    )
+    for side in ("home", "away"):
+        renamed = state.rename(
+            {c: f"{side}_{c}" for c in state.columns if c != "player_id"}
+        )
+        base = base.join(
+            renamed,
+            left_on=f"{side}_probable_pitcher_id",
+            right_on="player_id",
+            how="left",
+        )
+    return base
+
+
+def _join_platoon(base: pl.DataFrame, db: Database) -> pl.DataFrame:
+    """Split del equipo contra la mano del abridor probable rival (365 días)."""
+    if not db.table_exists("statcast_pitches"):
+        logger.warning("Bloque platoon omitido: falta la tabla statcast_pitches.")
+        return base
+    hands = db.query(HANDS_SQL)
+    daily = db.query(TEAM_DAILY_SQL)
+    for side in ("home", "away"):
+        other = "away" if side == "home" else "home"
+        base = base.join(
+            hands.rename({"hand": f"{side}_opp_hand"}),
+            left_on=f"{other}_probable_pitcher_id",
+            right_on="player_id",
+            how="left",
+        )
+        keyed = base.select(
+            "game_pk",
+            "game_date",
+            pl.col(f"{side}_team_id").alias("team_id"),
+            pl.col(f"{side}_opp_hand").alias("hand"),
+        )
+        window = keyed.join(daily, on=["team_id", "hand"], how="inner").filter(
+            (pl.col("game_date_right") >= pl.col("game_date") - pl.duration(days=LOOKBACK_DAYS))
+            & (pl.col("game_date_right") < pl.col("game_date"))
+        )
+        aggregated = window.group_by("game_pk").agg(
+            (
+                pl.col("num").sum()
+                / pl.when(pl.col("den").sum() > 0).then(pl.col("den").sum())
+            ).alias(f"{side}_lineup_xwoba_vs_hand"),
+            pl.col("pa").sum().alias(f"{side}_lineup_pa_vs_hand"),
+        )
+        base = base.join(aggregated, on="game_pk", how="left").with_columns(
+            # Con mano conocida pero sin PAs en la ventana, el histórico
+            # emite 0 (no null): misma semántica aquí.
+            pl.when(pl.col(f"{side}_opp_hand").is_not_null())
+            .then(pl.col(f"{side}_lineup_pa_vs_hand").fill_null(0))
+            .alias(f"{side}_lineup_pa_vs_hand")
+        ).drop(f"{side}_opp_hand")
+    return base
 
 
 def _join_pitchers(base: pl.DataFrame, db: Database) -> pl.DataFrame:

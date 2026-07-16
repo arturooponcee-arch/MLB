@@ -105,6 +105,56 @@ def test_elo_as_of_today(warehouse_with_scheduled: Database) -> None:
     assert df["home_elo_pre"][0] > df["away_elo_pre"][0]
 
 
+def test_sp_statcast_as_of_today(warehouse_with_scheduled: Database) -> None:
+    df = build_upcoming_features(
+        warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)
+    )
+    # 900 solo tiene pitch-by-pitch en g1: whiff 2/4, velo FF 94.0.
+    assert df["home_sp_whiff_pct_3"][0] == pytest.approx(0.5)
+    assert df["home_sp_fb_velo_3"][0] == pytest.approx(94.0)
+    assert df["home_sp_xwoba_against_3"][0] == pytest.approx(0.45)
+
+
+def test_platoon_as_of_today(warehouse_with_scheduled: Database) -> None:
+    df = build_upcoming_features(
+        warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)
+    )
+    # Visita (equipo 20) vs probable local 900 (R): 0.9/2 PA del 06-01.
+    assert df["away_lineup_xwoba_vs_hand"][0] == pytest.approx(0.45)
+    assert df["away_lineup_pa_vs_hand"][0] == 2
+    # Local (equipo 10) vs probable visita 950 (L): 0.3/1 PA.
+    assert df["home_lineup_xwoba_vs_hand"][0] == pytest.approx(0.30)
+    assert df["home_lineup_pa_vs_hand"][0] == 1
+
+
+def test_new_blocks_training_upcoming_parity(warehouse_with_scheduled: Database) -> None:
+    """Guard contra drift: toda columna de los bloques nuevos que produce
+    el entrenamiento debe existir también en las features de futuros."""
+    from mlb_quant.feature_engineering.builder import build_game_features
+
+    training = build_game_features(
+        warehouse_with_scheduled,
+        date(2023, 1, 1),
+        date(2024, 12, 31),
+        block_names=["elo", "rest_travel", "sp_statcast", "platoon"],
+    )
+    upcoming = build_upcoming_features(
+        warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)
+    )
+    base_columns = {
+        "game_pk",
+        "game_date",
+        "season",
+        "home_team_id",
+        "away_team_id",
+        "home_score",
+        "away_score",
+    }
+    feature_columns = set(training.columns) - base_columns
+    missing = sorted(feature_columns - set(upcoming.columns))
+    assert not missing, f"Columnas de entrenamiento ausentes en upcoming: {missing}"
+
+
 def test_rest_travel_as_of_today(warehouse_with_scheduled: Database) -> None:
     df = build_upcoming_features(
         warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)

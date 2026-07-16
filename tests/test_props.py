@@ -44,9 +44,11 @@ class TestBatterGames:
         assert df["home_runs"][0] == 1
         assert df["pa"][0] == 3  # eventos no nulos
 
-    def test_requires_statcast(self, warehouse: Database) -> None:
+    def test_requires_statcast(self, tmp_path_factory: pytest.TempPathFactory) -> None:
+        # El warehouse base ya trae statcast_pitches: usar una DB vacía.
+        empty = Database(tmp_path_factory.mktemp("sin_statcast") / "vacio.duckdb")
         with pytest.raises(ValueError, match="statcast_pitches"):
-            build_batter_games(warehouse)
+            build_batter_games(empty)
 
 
 class TestPropModel:
