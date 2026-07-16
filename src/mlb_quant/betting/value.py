@@ -203,6 +203,10 @@ def _match_events(games: pl.DataFrame, best: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _normalized(column: str) -> pl.Expr:
+def normalized_team(column: str) -> pl.Expr:
     """Nombre de equipo normalizado para cruzar fuentes distintas."""
     return pl.col(column).str.to_lowercase().str.strip_chars()
+
+
+# Alias interno histórico.
+_normalized = normalized_team
