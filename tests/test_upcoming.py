@@ -90,3 +90,30 @@ def test_empty_range_returns_empty(warehouse_with_scheduled: Database) -> None:
         warehouse_with_scheduled, date(2024, 7, 1), date(2024, 7, 1)
     )
     assert df.is_empty()
+
+
+def test_elo_as_of_today(warehouse_with_scheduled: Database) -> None:
+    from mlb_quant.feature_engineering.blocks.elo import ELO_GAMES_SQL, compute_elo
+
+    df = build_upcoming_features(
+        warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)
+    )
+    _, ratings = compute_elo(warehouse_with_scheduled.query(ELO_GAMES_SQL))
+    assert df["home_elo_pre"][0] == pytest.approx(ratings[10])
+    assert df["away_elo_pre"][0] == pytest.approx(ratings[20])
+    # El equipo 10 ganó todo: llega mejor rankeado.
+    assert df["home_elo_pre"][0] > df["away_elo_pre"][0]
+
+
+def test_rest_travel_as_of_today(warehouse_with_scheduled: Database) -> None:
+    df = build_upcoming_features(
+        warehouse_with_scheduled, date(2024, 6, 4), date(2024, 6, 4)
+    )
+    # Ambos jugaron g3 (2024-06-03, venue 100); el programado es en venue 100.
+    assert df["home_team_days_rest"][0] == 1
+    assert df["away_team_days_rest"][0] == 1
+    assert df["home_travel_km"][0] == pytest.approx(0.0, abs=0.1)
+    assert df["home_tz_shift"][0] == 0
+    # Local: gira 0. Visitante: venía de jugar como visita (racha 1) -> 2.
+    assert df["home_road_trip_len"][0] == 0
+    assert df["away_road_trip_len"][0] == 2

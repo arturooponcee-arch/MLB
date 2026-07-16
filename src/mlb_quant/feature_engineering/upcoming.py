@@ -19,11 +19,18 @@ import polars as pl
 from mlb_quant.db import Database
 from mlb_quant.feature_engineering.base import FeatureBlock
 from mlb_quant.feature_engineering.blocks.bullpen import BullpenFatigueBlock
+from mlb_quant.feature_engineering.blocks.elo import ELO_GAMES_SQL, compute_elo
 from mlb_quant.feature_engineering.blocks.park import ParkBlock
 from mlb_quant.feature_engineering.blocks.pitcher_form import (
     SUM_COLUMNS,
     WINDOWS,
     derived_expressions,
+)
+from mlb_quant.feature_engineering.blocks.rest_travel import (
+    VENUE_COORDS_SQL,
+    haversine_km,
+    team_travel_history,
+    tz_offset,
 )
 from mlb_quant.feature_engineering.blocks.team_form import _LONG_SQL as TEAM_LONG_SQL
 from mlb_quant.feature_engineering.blocks.team_form import WINDOWS as TEAM_WINDOWS
@@ -35,7 +42,7 @@ logger = logging.getLogger(__name__)
 _BASE_SQL = """
 SELECT game_pk, game_date, game_datetime_utc, season,
        home_team_id, away_team_id, home_team_name, away_team_name,
-       venue_name, status,
+       venue_id, venue_name, status,
        home_probable_pitcher_id, away_probable_pitcher_id,
        home_probable_pitcher_name, away_probable_pitcher_name
 FROM games
@@ -92,6 +99,8 @@ def build_upcoming_features(db: Database, start: date, end: date) -> pl.DataFram
 
     base = _join_team_form(base, db)
     base = _join_pitchers(base, db)
+    base = _join_elo(base, db)
+    base = _join_rest_travel(base, db)
     return base
 
 
@@ -121,6 +130,80 @@ def _join_team_form(base: pl.DataFrame, db: Database) -> pl.DataFrame:
         )
         base = base.join(renamed, on=f"{side}_team_id", how="left")
     return base
+
+
+def _join_elo(base: pl.DataFrame, db: Database) -> pl.DataFrame:
+    """Rating Elo vigente de cada equipo (tras su último juego completado)."""
+    _, ratings = compute_elo(db.query(ELO_GAMES_SQL))
+    state = pl.DataFrame(
+        {"team_id": list(ratings.keys()), "elo_pre": list(ratings.values())},
+        schema={"team_id": pl.Int64, "elo_pre": pl.Float64},
+    )
+    for side in ("home", "away"):
+        base = base.join(
+            state.rename({"team_id": f"{side}_team_id", "elo_pre": f"{side}_elo_pre"}),
+            on=f"{side}_team_id",
+            how="left",
+        )
+    return base
+
+
+def _join_rest_travel(base: pl.DataFrame, db: Database) -> pl.DataFrame:
+    """Descanso/viaje de cada equipo desde su último juego completado."""
+    if not db.table_exists("venues"):
+        logger.warning("Bloque rest_travel omitido: falta la tabla venues.")
+        return base
+    history = team_travel_history(db)
+    # Estado por equipo = su último juego completado (historial ya ordenado).
+    state = history.group_by("team_id", maintain_order=True).agg(
+        pl.col("game_date").last().alias("_last_date"),
+        pl.col("latitude").last().alias("_last_lat"),
+        pl.col("longitude").last().alias("_last_lon"),
+        pl.col("is_away").last().alias("_last_away"),
+        pl.col("road_trip_len").last().alias("_last_trip"),
+    )
+    coords = db.query(VENUE_COORDS_SQL)
+    base = base.join(coords, on="venue_id", how="left")
+    for side in ("home", "away"):
+        side_state = state.rename(
+            {c: f"{side}{c}" for c in state.columns if c != "team_id"}
+        )
+        base = base.join(
+            side_state, left_on=f"{side}_team_id", right_on="team_id", how="left"
+        )
+        is_away = 1 if side == "away" else 0
+        base = base.with_columns(
+            (pl.col("game_date") - pl.col(f"{side}_last_date"))
+            .dt.total_days()
+            .alias(f"{side}_team_days_rest"),
+            haversine_km(
+                pl.col(f"{side}_last_lat"),
+                pl.col(f"{side}_last_lon"),
+                pl.col("latitude"),
+                pl.col("longitude"),
+            ).alias(f"{side}_travel_km"),
+            (tz_offset(pl.col("longitude")) - tz_offset(pl.col(f"{side}_last_lon"))).alias(
+                f"{side}_tz_shift"
+            ),
+            (
+                pl.lit(is_away)
+                * (
+                    1
+                    + pl.when(pl.col(f"{side}_last_away") == 1)
+                    .then(pl.col(f"{side}_last_trip"))
+                    .otherwise(0)
+                )
+            )
+            .cast(pl.Int64)
+            .alias(f"{side}_road_trip_len"),
+        ).drop(
+            f"{side}_last_date",
+            f"{side}_last_lat",
+            f"{side}_last_lon",
+            f"{side}_last_away",
+            f"{side}_last_trip",
+        )
+    return base.drop("latitude", "longitude")
 
 
 def _join_pitchers(base: pl.DataFrame, db: Database) -> pl.DataFrame:

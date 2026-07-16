@@ -61,6 +61,10 @@ def warehouse(tmp_path: Path) -> Database:
             "center": [400, 410, 400, 410],
             "left_line": [330, 335, 330, 335],
             "right_line": [325, 330, 325, 330],
+            # Venue 100 ~costa este (huso -5), venue 200 ~costa oeste (huso -8):
+            # haversine(100 -> 200) ≈ 3923.6 km, tz_shift = -3.
+            "latitude": [40.0, 34.0, 40.0, 34.0],
+            "longitude": [-74.0, -118.0, -74.0, -118.0],
         }
     )
     db.upsert("venues", venues, keys=["venue_id", "season"])
