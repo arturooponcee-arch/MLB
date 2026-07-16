@@ -75,3 +75,78 @@ def test_handles_missing_feature_columns(synthetic_features: pl.DataFrame) -> No
     model = CalibratedEnsembleWinModel().fit(synthetic_features)
     preds = model.predict_home_win(synthetic_features.drop("strength_diff"))
     assert len(preds) == len(synthetic_features)
+
+
+def test_default_equals_explicit_avg_isotonic(synthetic_features: pl.DataFrame) -> None:
+    default = CalibratedEnsembleWinModel().fit(synthetic_features)
+    explicit = CalibratedEnsembleWinModel(
+        stacking=False, calibration="isotonic"
+    ).fit(synthetic_features)
+    np.testing.assert_allclose(
+        default.predict_home_win(synthetic_features)["p_home_win"].to_numpy(),
+        explicit.predict_home_win(synthetic_features)["p_home_win"].to_numpy(),
+    )
+
+
+def test_stacking_predicts_in_range_and_beats_naive(
+    synthetic_features: pl.DataFrame,
+) -> None:
+    model = CalibratedEnsembleWinModel(stacking=True, calibration="none").fit(
+        synthetic_features
+    )
+    preds = model.predict_home_win(synthetic_features)
+    p = preds["p_home_win"].to_numpy()
+    assert ((p >= 0.01) & (p <= 0.99)).all()
+    y = (
+        (synthetic_features["home_score"] > synthetic_features["away_score"])
+        .to_numpy()
+        .astype(float)
+    )
+    naive_brier = float(np.mean((y.mean() - y) ** 2))
+    assert float(np.mean((p - y) ** 2)) <= naive_brier
+
+
+def test_with_head_shares_members_and_does_not_mutate(
+    synthetic_features: pl.DataFrame,
+) -> None:
+    base = CalibratedEnsembleWinModel().fit(synthetic_features)
+    before = base.predict_home_win(synthetic_features)["p_home_win"].to_numpy().copy()
+    clone = base.with_head(stacking=True, calibration="none")
+    # Miembros compartidos por identidad: no hubo reentrenamiento.
+    assert clone._boosting is base._boosting
+    assert clone._poisson is base._poisson
+    assert clone._logistic is base._logistic
+    # El original queda intacto.
+    after = base.predict_home_win(synthetic_features)["p_home_win"].to_numpy()
+    np.testing.assert_allclose(before, after)
+    # La cabeza sí cambia la salida.
+    clone_preds = clone.predict_home_win(synthetic_features)["p_home_win"].to_numpy()
+    assert not np.allclose(before, clone_preds)
+
+
+def test_with_head_requires_fit(synthetic_features: pl.DataFrame) -> None:
+    with pytest.raises(ValueError, match="entrenado"):
+        CalibratedEnsembleWinModel().with_head(stacking=True, calibration="none")
+
+
+def test_stacking_with_calibrator_splits_tail(synthetic_features: pl.DataFrame) -> None:
+    model = CalibratedEnsembleWinModel(stacking=True, calibration="isotonic").fit(
+        synthetic_features
+    )
+    preds = model.predict_home_win(synthetic_features)["p_home_win"]
+    assert ((preds >= 0.01) & (preds <= 0.99)).all()
+
+
+def test_hgb_params_reach_estimator(synthetic_features: pl.DataFrame) -> None:
+    model = CalibratedEnsembleWinModel(
+        hgb_params={"max_iter": 77, "l2_regularization": 0.5}
+    )
+    params = model._boosting.get_params()
+    assert params["max_iter"] == 77
+    assert params["l2_regularization"] == 0.5
+    assert params["early_stopping"] is True  # default preservado
+
+
+def test_invalid_calibration_raises() -> None:
+    with pytest.raises(ValueError, match="Calibrador desconocido"):
+        CalibratedEnsembleWinModel(calibration="bogus")  # type: ignore[arg-type]

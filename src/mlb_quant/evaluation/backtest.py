@@ -12,6 +12,7 @@ import numpy as np
 import polars as pl
 
 from mlb_quant.evaluation.metrics import probability_metrics
+from mlb_quant.models.calibration import CalibrationKind
 from mlb_quant.models.ensemble import CalibratedEnsembleWinModel
 from mlb_quant.models.logistic import LogisticWinModel
 from mlb_quant.models.markets import market_probabilities
@@ -21,6 +22,30 @@ logger = logging.getLogger(__name__)
 
 #: Mínimo de juegos de entrenamiento antes de emitir predicciones.
 MIN_TRAIN_GAMES = 500
+
+
+@dataclass(frozen=True)
+class EnsembleConfig:
+    """Configuración de cabeza del ensemble a comparar en el backtest.
+
+    Attributes:
+        stacking: Meta-logística (True) o promedio simple (False).
+        calibration: Calibrador aplicado a la salida de la cabeza.
+    """
+
+    stacking: bool
+    calibration: CalibrationKind
+
+
+#: Configuraciones estándar de comparación. Los miembros se entrenan una
+#: vez por fold; cada cabeza extra cuesta milisegundos (with_head).
+ENSEMBLE_CONFIGS: dict[str, EnsembleConfig] = {
+    "avg_iso": EnsembleConfig(stacking=False, calibration="isotonic"),
+    "avg_platt": EnsembleConfig(stacking=False, calibration="platt"),
+    "avg_beta": EnsembleConfig(stacking=False, calibration="beta"),
+    "avg_raw": EnsembleConfig(stacking=False, calibration="none"),
+    "stack": EnsembleConfig(stacking=True, calibration="none"),
+}
 
 
 @dataclass(frozen=True)
@@ -56,6 +81,7 @@ def walk_forward(
     end: date,
     total_line: float = 8.5,
     min_train_games: int = MIN_TRAIN_GAMES,
+    ensemble_configs: dict[str, EnsembleConfig] | None = None,
 ) -> BacktestResult:
     """Corre el backtest mensual sobre una matriz de features.
 
@@ -66,6 +92,10 @@ def walk_forward(
         end: Último día a predecir.
         total_line: Línea de over/under a evaluar.
         min_train_games: Historia mínima para emitir predicciones.
+        ensemble_configs: Cabezas extra a comparar; cada una emite una
+            columna ``p_home_ens_{nombre}`` (los miembros se entrenan una
+            sola vez por fold). ``p_home_ensemble`` siempre es la config
+            por defecto del constructor.
 
     Returns:
         Predicciones por juego y métricas agregadas.
@@ -97,12 +127,23 @@ def walk_forward(
         logit = logistic.predict_home_win(test).rename({"p_home_win": "p_home_logistic"})
         ens = ensemble.predict_home_win(test).rename({"p_home_win": "p_home_ensemble"})
 
-        frames.append(
+        fold = (
             test.select("game_pk", "game_date", "home_score", "away_score")
             .join(markets, on="game_pk")
             .join(logit, on="game_pk")
             .join(ens, on="game_pk")
         )
+        for name, config in (ensemble_configs or {}).items():
+            head = ensemble.with_head(
+                stacking=config.stacking, calibration=config.calibration
+            )
+            fold = fold.join(
+                head.predict_home_win(test).rename(
+                    {"p_home_win": f"p_home_ens_{name}"}
+                ),
+                on="game_pk",
+            )
+        frames.append(fold)
         logger.info(
             "Mes %s: train=%d juegos, predichos=%d.", month_start, len(train), len(test)
         )
@@ -147,5 +188,11 @@ def _evaluate(
             over, predictions["p_over"].to_numpy()
         ),
     }
+    for column in predictions.columns:
+        if column.startswith("p_home_ens_"):
+            name = column.removeprefix("p_home_ens_")
+            metrics[f"moneyline_{name}"] = probability_metrics(
+                home_win, predictions[column].to_numpy()
+            )
     metrics["totales"] = {"mae_total_runs": total_mae, "n": float(len(predictions))}
     return metrics

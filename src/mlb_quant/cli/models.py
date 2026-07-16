@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mlb_quant.db import Database
-from mlb_quant.evaluation.backtest import walk_forward
+from mlb_quant.evaluation.backtest import ENSEMBLE_CONFIGS, walk_forward
 from mlb_quant.evaluation.metrics import calibration_table
 from mlb_quant.models.base import save_model
 from mlb_quant.models.poisson import PoissonRunsModel
@@ -40,6 +40,9 @@ def backtest(
     start: str = typer.Option(..., help="Primer día a predecir (YYYY-MM-DD)."),
     end: str = typer.Option(..., help="Último día a predecir (YYYY-MM-DD)."),
     total_line: float = typer.Option(8.5, help="Línea de over/under a evaluar."),
+    compare: bool = typer.Option(
+        True, help="Compara las cabezas del ensemble (columnas p_home_ens_*)."
+    ),
 ) -> None:
     """Backtest walk-forward mensual -> tabla ``backtest_predictions``."""
     start_date, end_date = _parse_date(start), _parse_date(end)
@@ -47,7 +50,13 @@ def backtest(
     features = _load_features(db)
 
     try:
-        result = walk_forward(features, start_date, end_date, total_line=total_line)
+        result = walk_forward(
+            features,
+            start_date,
+            end_date,
+            total_line=total_line,
+            ensemble_configs=ENSEMBLE_CONFIGS if compare else None,
+        )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
