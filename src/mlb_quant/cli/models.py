@@ -93,6 +93,71 @@ def backtest(
 
 
 @models_app.command()
+def calibration(
+    column: str = typer.Option("p_home_ensemble", help="Columna de probabilidad a evaluar."),
+    bins: int = typer.Option(10, help="Número de bins de la tabla de calibración."),
+    html: str = typer.Option(None, help="Ruta de salida HTML con curvas por temporada."),
+) -> None:
+    """Calibración por temporada desde ``backtest_predictions`` (sin refit).
+
+    Imprime la tabla de calibración y Brier/log-loss de cada temporada;
+    con ``--html`` escribe además las curvas (SVG inline) a un archivo.
+    """
+    from pathlib import Path
+
+    from mlb_quant.evaluation.metrics import probability_metrics
+    from mlb_quant.visualization.calibration import render_calibration_html
+
+    db = Database(get_settings().duckdb_path)
+    if not db.table_exists("backtest_predictions"):
+        console.print(
+            "[red]Tabla backtest_predictions vacía.[/red] Corre antes: mlb models backtest"
+        )
+        raise typer.Exit(code=1)
+    predictions = db.query("SELECT * FROM backtest_predictions")
+    if column not in predictions.columns:
+        available = sorted(c for c in predictions.columns if c.startswith("p_home"))
+        console.print(f"[red]Columna {column!r} no existe.[/red] Disponibles: {available}")
+        raise typer.Exit(code=1)
+    predictions = predictions.filter(pl.col(column).is_not_null())
+
+    per_season: dict[int, pl.DataFrame] = {}
+    season_metrics: dict[int, dict[str, float]] = {}
+    for (season,), group in predictions.group_by(
+        pl.col("game_date").dt.year(), maintain_order=True
+    ):
+        y = (group["home_score"] > group["away_score"]).to_numpy().astype(int)
+        p = group[column].to_numpy()
+        per_season[int(season)] = calibration_table(y, p, n_bins=bins)
+        season_metrics[int(season)] = probability_metrics(y, p)
+
+        table = Table(title=f"Calibración {column} — temporada {season}")
+        for header in ("bin", "p_predicha", "p_observada", "n"):
+            table.add_column(header, justify="right")
+        for row in per_season[int(season)].iter_rows(named=True):
+            table.add_row(
+                f"{row['bin_low']:.1f}-{row['bin_high']:.1f}",
+                f"{row['p_predicted']:.3f}",
+                f"{row['p_observed']:.3f}",
+                str(row["n"]),
+            )
+        console.print(table)
+        stats = season_metrics[int(season)]
+        console.print(
+            f"[dim]brier={stats['brier']:.4f} log_loss={stats['log_loss']:.4f} "
+            f"n={int(stats['n'])}[/dim]"
+        )
+
+    if html:
+        path = Path(html)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            render_calibration_html(per_season, column, season_metrics), encoding="utf-8"
+        )
+        console.print(f"[green]Curvas escritas:[/green] {path}")
+
+
+@models_app.command()
 def explain(
     top: int = typer.Option(15, help="Número de features a mostrar por dirección."),
     side: str = typer.Option("home", help="home | away (lambda a explicar)."),

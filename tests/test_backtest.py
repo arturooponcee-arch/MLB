@@ -74,9 +74,12 @@ def test_walk_forward_compares_ensemble_heads(season_features: pl.DataFrame) -> 
         assert ((p >= 0.01) & (p <= 0.99)).all()
     # La columna histórica sigue presente (config default del constructor).
     assert "p_home_ensemble" in result.predictions.columns
-    # avg_iso replica la config default: mismas probabilidades.
+    # avg_platt replica la config default: mismas probabilidades.
     assert (
-        (result.predictions["p_home_ensemble"] - result.predictions["p_home_ens_avg_iso"])
+        (
+            result.predictions["p_home_ensemble"]
+            - result.predictions["p_home_ens_avg_platt"]
+        )
         .abs()
         .max()
         < 1e-12

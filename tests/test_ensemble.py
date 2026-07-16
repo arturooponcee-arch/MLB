@@ -77,10 +77,10 @@ def test_handles_missing_feature_columns(synthetic_features: pl.DataFrame) -> No
     assert len(preds) == len(synthetic_features)
 
 
-def test_default_equals_explicit_avg_isotonic(synthetic_features: pl.DataFrame) -> None:
+def test_default_equals_explicit_avg_platt(synthetic_features: pl.DataFrame) -> None:
     default = CalibratedEnsembleWinModel().fit(synthetic_features)
     explicit = CalibratedEnsembleWinModel(
-        stacking=False, calibration="isotonic"
+        stacking=False, calibration="platt"
     ).fit(synthetic_features)
     np.testing.assert_allclose(
         default.predict_home_win(synthetic_features)["p_home_win"].to_numpy(),

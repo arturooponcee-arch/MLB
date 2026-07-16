@@ -17,6 +17,13 @@ Dos cabezas disponibles:
 
 La separación miembros/cabeza permite comparar cabezas en el backtest
 sin reentrenar miembros (:meth:`CalibratedEnsembleWinModel.with_head`).
+
+Default medido (walk-forward 2023-06 -> 2026-07, ~6.2k juegos, features
+completas): promedio + Platt gana — Brier 0.2467 / log-loss 0.6865 vs
+isotónica 0.2492 / 0.6990 (la isotónica cuantiza en mesetas y pierde
+log-loss), beta 0.2469 / 0.6867 y stacking 0.2484 / 0.6930 (la meta
+sobre-ajusta las colas mensuales chicas). El comportamiento histórico
+sigue disponible con ``calibration="isotonic"``.
 """
 
 import logging
@@ -71,7 +78,7 @@ class CalibratedEnsembleWinModel:
         seed: int = 42,
         *,
         stacking: bool = False,
-        calibration: CalibrationKind = "isotonic",
+        calibration: CalibrationKind = "platt",
         hgb_params: dict[str, float | int | bool] | None = None,
     ) -> None:
         """Inicializa el ensemble sin entrenar.

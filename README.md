@@ -18,10 +18,14 @@ El pipeline completo funciona de punta a punta:
 1. **Ingesta** — calendario, boxscores y lineups (MLB Stats API), pitch-by-pitch
    (Statcast), leaderboards (Baseball Savant), histórico (Lahman), clima por
    estadio (Open-Meteo) y, opcionalmente, cuotas (The Odds API).
-2. **Features** — bloques de forma ofensiva, abridor, bullpen, parque, clima y
-   lineup, tanto para juegos jugados (entrenamiento) como programados (predicción).
+2. **Features** — bloques de forma ofensiva, abridor (resultados + Statcast:
+   whiff%, CSW%, velocidad de recta, xwOBA en contra), bullpen, parque, clima,
+   lineup, platoon (equipo vs. mano del abridor rival), Elo y descanso/viaje;
+   tanto para juegos jugados (entrenamiento) como programados (predicción).
 3. **Modelos** — Poisson de carreras (interpretable, con `mlb models explain`) +
-   ensemble logístico calibrado para moneyline, validados con backtest walk-forward.
+   ensemble calibrado (Platt por defecto; isotónica/beta/stacking comparables
+   con `mlb models backtest --compare`), validados con backtest walk-forward y
+   curvas de calibración por temporada (`mlb models calibration`).
 4. **Simulación** — Monte Carlo por juego (10k sims): totales, runline, F5.
 5. **Props** — strikeouts del abridor (línea configurable).
 6. **Apuestas** — cuota justa (1/p) en todos los reportes, EV y sizing con Kelly
@@ -90,6 +94,18 @@ poetry run mlb bets kelly --p 0.55 --odds 2.10 --bankroll 1000
 ```
 
 Devuelve EV, cuota justa y stakes Kelly (full/half/quarter con tope duro).
+
+### Ledger y CLV (medir si el edge es real)
+
+```bash
+poetry run mlb bets log --date 2026-07-17 --team "Dodgers" --odds 2.05 --stake 25
+poetry run mlb bets settle    # resultados + CLV vs. último snapshot pre-juego
+poetry run mlb bets report    # ROI, aciertos y CLV medio del ledger
+```
+
+El CLV (cuota tomada vs. cierre del mercado) distingue habilidad de suerte en
+decenas de apuestas; el ROI solo lo hace en miles. Requiere ir acumulando
+snapshots de cuotas (CSV manual o API) antes de cada juego.
 
 Opcionalmente, con `ODDS_API_KEY` en `.env` (The Odds API), el escaneo baja las
 cuotas solo:
