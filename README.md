@@ -55,6 +55,22 @@ Corre todo en orden: calendario → boxscores de ayer → Statcast → features 
 clima → (cuotas si hay `ODDS_API_KEY`) → dashboard + reporte diario. Idempotente;
 programable con el Task Scheduler de Windows (ver docstring de `mlb daily`).
 
+### Despliegue en Vercel
+
+El pipeline diario despliega el dashboard estático (`index.html` + `daily/`)
+al proyecto Vercel `mlb-quant-dashboard` (team `arturoo10`) en cada corrida,
+vía `vercel deploy --prod` con la CLI — sin ramas intermedias.
+
+Requiere un secret `VERCEL_TOKEN` en el repo (Settings → Secrets and
+variables → Actions). Genera el token en vercel.com/account/tokens y súbelo
+con:
+
+```bash
+gh secret set VERCEL_TOKEN
+```
+
+- El mismo workflow también sigue publicando el dashboard vía GitHub Pages.
+
 ### Comandos individuales
 
 ```bash

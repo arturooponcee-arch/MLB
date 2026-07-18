@@ -1,10 +1,10 @@
 name: daily-pipeline
 
-# Corre el pipeline diario a las 06:00 de CDMX. México no observa horario de
-# verano desde 2022, así que CDMX es UTC-6 todo el año: 06:00 CDMX = 12:00 UTC.
+# Corre el pipeline diario a las 23:30 de CDMX. México no observa horario de
+# verano desde 2022, así que CDMX es UTC-6 todo el año: 23:30 CDMX = 05:30 UTC.
 on:
   schedule:
-    - cron: "0 12 * * *"
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -121,3 +121,14 @@ jobs:
         if: success()
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # No bloqueante: si falta el secret VERCEL_TOKEN o Vercel falla, no debe
+      # tumbar el resto del pipeline (Pages ya se publicó arriba).
+      - name: Publicar sitio en Vercel
+        if: success()
+        continue-on-error: true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_fioYhYF0IA7PJKBqIXeZclWz
+          VERCEL_PROJECT_ID: prj_MSzop0yOXuZOMhsAAiaLZyQfkBe8
+        run: npx --yes vercel@latest deploy site --prod --yes --token="$VERCEL_TOKEN"
