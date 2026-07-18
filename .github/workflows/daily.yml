@@ -1,0 +1,80 @@
+name: daily-pipeline
+
+# Corre el pipeline diario a las 06:00 de CDMX. México no observa horario de
+# verano desde 2022, así que CDMX es UTC-6 todo el año: 06:00 CDMX = 12:00 UTC.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Instalar Poetry
+        run: pipx install poetry
+
+      - name: Cache del venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py313-${{ hashFiles('poetry.lock') }}
+
+      - name: Instalar dependencias
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --with ml,data,viz --no-interaction
+
+      # La base DuckDB (~560 MB) persiste entre corridas vía cache de Actions.
+      # Cada corrida guarda un cache nuevo (key con run_id) y la siguiente
+      # restaura el más reciente vía restore-keys. GitHub evicta los viejos.
+      - name: Restaurar base DuckDB
+        id: db-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: database/mlb.duckdb
+          key: mlb-duckdb-${{ github.run_id }}
+          restore-keys: |
+            mlb-duckdb-
+
+      # Primera corrida (o cache evictado): baja el seed del release `db-seed`.
+      # Ver README de despliegue: se sube una vez con `gh release create`.
+      - name: Seed de la base desde release
+        if: steps.db-cache.outputs.cache-matched-key == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download db-seed --pattern "mlb.duckdb.gz" --dir database
+          gunzip database/mlb.duckdb.gz
+          ls -lh database/
+
+      - name: Pipeline diario
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: poetry run mlb daily run
+
+      - name: Guardar base DuckDB en cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: database/mlb.duckdb
+          key: mlb-duckdb-${{ github.run_id }}
+
+      - name: Publicar reportes como artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-${{ github.run_number }}
+          path: reports/
+          retention-days: 30
