@@ -131,4 +131,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: team_fioYhYF0IA7PJKBqIXeZclWz
           VERCEL_PROJECT_ID: prj_MSzop0yOXuZOMhsAAiaLZyQfkBe8
-        run: npx --yes vercel@latest deploy site --prod --yes --token="$VERCEL_TOKEN"
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::Secret VERCEL_TOKEN no configurado: el dashboard de Vercel NO se actualizó. Agrégalo en Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npx --yes vercel@latest deploy site --prod --yes --token="$VERCEL_TOKEN"
