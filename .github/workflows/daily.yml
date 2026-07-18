@@ -11,10 +11,18 @@ concurrency:
   group: daily-pipeline
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   daily:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -78,3 +86,23 @@ jobs:
           name: reportes-${{ github.run_number }}
           path: reports/
           retention-days: 30
+
+      # Dashboard con URL fija, actualizado en cada corrida:
+      # https://arturooponcee-arch.github.io/MLB/
+      - name: Preparar sitio para Pages
+        if: success()
+        run: |
+          mkdir -p site
+          cp reports/dashboard.html site/index.html
+          cp -r reports/daily site/daily 2>/dev/null || true
+
+      - name: Subir sitio
+        if: success()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy a GitHub Pages
+        if: success()
+        id: deployment
+        uses: actions/deploy-pages@v4
