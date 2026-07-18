@@ -70,6 +70,9 @@ jobs:
       - name: Pipeline diario
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          # date.today() usa la zona local del runner (UTC): sin esto, una
+          # corrida manual en la noche de CDMX generaría la fecha siguiente.
+          TZ: America/Mexico_City
         run: poetry run mlb daily run
 
       - name: Guardar base DuckDB en cache
@@ -94,7 +97,19 @@ jobs:
         run: |
           mkdir -p site
           cp reports/dashboard.html site/index.html
-          cp -r reports/daily site/daily 2>/dev/null || true
+          if [ -d reports/daily ]; then
+            cp -r reports/daily site/daily
+            # Pages no lista directorios: índice con los reportes, recientes primero.
+            {
+              echo '<!doctype html><html lang="es"><meta charset="utf-8">'
+              echo '<title>MLB Quant — Reportes diarios</title>'
+              echo '<h1>Reportes diarios</h1><p><a href="../">← Dashboard</a></p><ul>'
+              ls site/daily | grep -v '^index\.html$' | sort -r | while read -r f; do
+                echo "<li><a href=\"$f\">$f</a></li>"
+              done
+              echo '</ul></html>'
+            } > site/daily/index.html
+          fi
 
       - name: Subir sitio
         if: success()
