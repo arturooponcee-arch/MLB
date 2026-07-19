@@ -116,11 +116,18 @@ def _render_parlays(parlays: "DailyParlays") -> str:
         )
         name = html.escape(parlay.name.capitalize())
         odds = f"p {parlay.p_combined:.3f} · justa {parlay.fair_odds:.2f}"
+        substitute = ""
+        if parlay.substitute is not None:
+            sub = parlay.substitute.row(0, named=True)
+            substitute = (
+                f'<div class="parlay-sub">Suplente si el prop no está en tu book: '
+                f'{html.escape(str(sub["selection"]))} (p {sub["p"]:.3f})</div>'
+            )
         cards.append(f"""
       <div class="parlay">
         <div class="parlay-head"><span class="parlay-name">{name}</span>
           <span class="parlay-odds">{odds}</span></div>
-        <ul class="parlay-legs">{legs}</ul>
+        <ul class="parlay-legs">{legs}</ul>{substitute}
       </div>""")
     return f"""
     <h2 class="section">Combinadas del día</h2>
@@ -247,6 +254,8 @@ tbody tr:hover {{ background: color-mix(in srgb, var(--track) 45%, transparent);
 .parlay-legs li {{ margin: 2px 0; }}
 .parlay-note {{ color: var(--muted); font-size: 12px; margin-top: 8px;
   max-width: 72ch; }}
+.parlay-sub {{ color: var(--muted); font-size: 12px; margin-top: 8px;
+  font-style: italic; }}
 footer {{ color: var(--muted); font-size: 12px; margin-top: 14px; max-width: 72ch; }}
 </style>
 </head>

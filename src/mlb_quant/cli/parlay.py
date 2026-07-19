@@ -71,6 +71,12 @@ def suggest(
         for leg in parlay.legs.iter_rows(named=True):
             table.add_row(leg["selection"], leg["market"], f"{leg['p']:.3f}")
         console.print(table)
+        if parlay.substitute is not None:
+            sub = parlay.substitute.row(0, named=True)
+            console.print(
+                f"  [dim]Suplente si el prop no está en tu book: "
+                f"{escape(sub['selection'])} (p {sub['p']:.3f})[/dim]"
+            )
 
     if not parlays.notes.is_empty():
         console.print("[bold]Notas de analistas:[/bold]")

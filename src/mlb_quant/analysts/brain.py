@@ -53,12 +53,18 @@ class Parlay:
             independencia asumida).
         fair_odds: Cuota justa combinada (1/p): solo tiene valor si el
             book paga más.
+        substitute: Pierna suplente (mejor pierna no usada, de otro
+            juego) cuando la combinada incluye props: no todos los books
+            listan props de cada pitcher, así que el usuario puede
+            sustituir sin rearmar. None si no hay props o no queda
+            piscina.
     """
 
     name: str
     legs: pl.DataFrame
     p_combined: float
     fair_odds: float
+    substitute: pl.DataFrame | None = None
 
 
 @dataclass(frozen=True)
@@ -215,9 +221,25 @@ def _build_parlay(pool: pl.DataFrame, name: str, n_legs: int, min_p: float) -> P
     p_combined = float(candidates["p"].product())
     if p_combined <= 0.0:
         return None
+
+    substitute = None
+    if (candidates["market"] == "prop_k").any():
+        used_games = candidates["game_pk"].to_list()
+        backups = (
+            pool.filter(
+                (pl.col("market") != "prop_k")
+                & ~pl.col("game_pk").is_in(used_games)
+                & (pl.col("p") >= min_p)
+            )
+            .sort("score", descending=True)
+            .head(1)
+        )
+        substitute = backups if not backups.is_empty() else None
+
     return Parlay(
         name=name,
         legs=candidates,
         p_combined=p_combined,
         fair_odds=1.0 / p_combined,
+        substitute=substitute,
     )

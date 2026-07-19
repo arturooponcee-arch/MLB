@@ -202,6 +202,12 @@ def _parlays_markdown(parlays: DailyParlays) -> list[str]:
         )
         for leg in parlay.legs.iter_rows(named=True):
             lines.append(f"- {leg['selection']} (p {leg['p']:.3f})")
+        if parlay.substitute is not None:
+            sub = parlay.substitute.row(0, named=True)
+            lines.append(
+                f"- _Suplente si el prop no está en tu book: "
+                f"{sub['selection']} (p {sub['p']:.3f})_"
+            )
         lines.append("")
     if not parlays.notes.is_empty():
         lines += ["### Notas de analistas", ""]

@@ -89,6 +89,43 @@ def test_player_prop_legs_thresholds() -> None:
     assert legs.filter(pl.col("game_pk") == 3)["p"][0] == pytest.approx(0.70)
 
 
+def test_player_prop_legs_include_team_name() -> None:
+    props = pl.DataFrame(
+        {
+            "game_pk": [1],
+            "pitcher_name": ["Jacob Lopez"],
+            "team_name": ["Athletics"],
+            "line": [5.5],
+            "p_over": [0.70],
+        }
+    )
+    legs = PlayerAnalyst.prop_legs(DailyContext(games=pl.DataFrame(), props=props))
+    assert legs["selection"][0] == "K Over 5.5: Jacob Lopez (Athletics)"
+
+
+def test_brain_parlay_with_prop_gets_substitute() -> None:
+    games = _games(
+        *[_game_row(pk, p_home_win=0.70, p_over=0.68) for pk in (1, 2, 3, 4, 5)]
+    )
+    props = pl.DataFrame(
+        {
+            "game_pk": [1],
+            "pitcher_name": ["Jacob Lopez"],
+            "team_name": ["Athletics"],
+            "line": [5.5],
+            "p_over": [0.99],  # gana el ranking: entra a todas las combinadas
+        }
+    )
+    result = generate_daily_parlays(games, props)
+    for parlay in result.parlays:
+        has_prop = (parlay.legs["market"] == "prop_k").any()
+        if has_prop:
+            assert parlay.substitute is not None
+            sub = parlay.substitute.row(0, named=True)
+            assert sub["market"] != "prop_k"
+            assert sub["game_pk"] not in parlay.legs["game_pk"].to_list()
+
+
 def test_game_analyst_emits_one_leg_per_market() -> None:
     report = GameAnalyst().analyze(_ctx(_game_row(1, p_home_win=0.65, p_over=0.60)))
     legs = report.signals

@@ -265,6 +265,7 @@ def build_upcoming_pitcher_frame(db: Database, target_date: date) -> pl.DataFram
                 "game_date",
                 "season",
                 pl.col(f"{side}_team_id").alias("team_id"),
+                pl.col(f"{side}_team_name").alias("team_name"),
                 pl.col(f"{side}_probable_pitcher_id").alias("player_id"),
                 pl.col(f"{side}_probable_pitcher_name").alias("pitcher_name"),
                 pl.col(f"{opponent}_team_name").alias("opponent_name"),

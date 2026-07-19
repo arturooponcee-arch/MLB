@@ -77,16 +77,21 @@ class PlayerAnalyst:
         needed = ("game_pk", "pitcher_name", "line", "p_over")
         if props.is_empty() or not has_columns(props, *needed):
             return pl.DataFrame()
+        # Nombre con equipo: el usuario busca al pitcher en su book por equipo.
+        if has_columns(props, "team_name"):
+            who = pl.format("{} ({})", "pitcher_name", "team_name")
+        else:
+            who = pl.col("pitcher_name")
         overs = props.filter(pl.col("p_over") >= PROP_MIN_P).select(
             pl.col("game_pk").cast(pl.Int64),
             pl.lit("prop_k").alias("market"),
-            pl.format("K Over {}: {}", "line", "pitcher_name").alias("selection"),
+            pl.format("K Over {}: {}", "line", who).alias("selection"),
             pl.col("p_over").alias("p"),
         )
         unders = props.filter(pl.col("p_over") <= 1.0 - PROP_MIN_P).select(
             pl.col("game_pk").cast(pl.Int64),
             pl.lit("prop_k").alias("market"),
-            pl.format("K Under {}: {}", "line", "pitcher_name").alias("selection"),
+            pl.format("K Under {}: {}", "line", who).alias("selection"),
             (1.0 - pl.col("p_over")).alias("p"),
         )
         return pl.concat([overs, unders])
