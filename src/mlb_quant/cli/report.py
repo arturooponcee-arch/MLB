@@ -8,9 +8,11 @@ import polars as pl
 import typer
 from rich.console import Console
 
+from mlb_quant.analysts.brain import generate_daily_parlays
 from mlb_quant.db import Database
 from mlb_quant.ingestion.mlb_stats_api import MlbStatsApi
 from mlb_quant.ingestion.weather import WeatherSource
+from mlb_quant.models.props import predict_upcoming_strikeouts
 from mlb_quant.reporting.daily import generate_daily_report, predict_upcoming_games
 from mlb_quant.settings import get_settings
 from mlb_quant.visualization.dashboard import render_dashboard
@@ -80,7 +82,13 @@ def _generate(db: Database, target: date, sims: int) -> tuple[date | None, int]:
         render_dashboard(pl.DataFrame(), str(target), output)
         return None, 0
     games = predict_upcoming_games(db, game_date, sims)
-    render_dashboard(games, str(game_date), output)
+    try:
+        props = predict_upcoming_strikeouts(db, game_date)
+    except Exception as exc:  # sin props el dashboard sigue siendo útil
+        logger.warning("Props omitidos en el dashboard: %s", exc)
+        props = pl.DataFrame()
+    parlays = generate_daily_parlays(games, props)
+    render_dashboard(games, str(game_date), output, parlays=parlays)
     return game_date, len(games)
 
 

@@ -14,6 +14,7 @@ from mlb_quant.cli.daily import daily_app
 from mlb_quant.cli.features import features_app
 from mlb_quant.cli.ingest import ingest_app
 from mlb_quant.cli.models import models_app
+from mlb_quant.cli.parlay import parlay_app
 from mlb_quant.cli.props import props_app
 from mlb_quant.cli.report import report_app
 from mlb_quant.cli.simulate import simulate_app
@@ -33,6 +34,7 @@ app.add_typer(report_app, name="report")
 app.add_typer(props_app, name="props")
 app.add_typer(bets_app, name="bets")
 app.add_typer(daily_app, name="daily")
+app.add_typer(parlay_app, name="parlay")
 console = Console()
 
 

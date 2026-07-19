@@ -10,15 +10,24 @@ import html
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from mlb_quant.analysts.brain import DailyParlays
 
 logger = logging.getLogger(__name__)
 
 _REFRESH_SECONDS = 60
 
 
-def render_dashboard(games: pl.DataFrame, target_date: str, output_path: Path) -> Path:
+def render_dashboard(
+    games: pl.DataFrame,
+    target_date: str,
+    output_path: Path,
+    parlays: "DailyParlays | None" = None,
+) -> Path:
     """Escribe el dashboard HTML.
 
     Args:
@@ -27,6 +36,7 @@ def render_dashboard(games: pl.DataFrame, target_date: str, output_path: Path) -
             ``sim_*``).
         target_date: Fecha mostrada en el encabezado (ISO).
         output_path: Ruta del HTML resultante.
+        parlays: Combinadas del cerebro pronosticador (opcional).
 
     Returns:
         La ruta escrita.
@@ -34,6 +44,7 @@ def render_dashboard(games: pl.DataFrame, target_date: str, output_path: Path) -
     generated = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
     body = _render_games(games) if not games.is_empty() else _render_empty()
     tiles = _render_tiles(games, target_date)
+    parlays_html = _render_parlays(parlays) if parlays and parlays.parlays else ""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -43,6 +54,7 @@ def render_dashboard(games: pl.DataFrame, target_date: str, output_path: Path) -
             target_date=target_date,
             tiles=tiles,
             body=body,
+            parlays=parlays_html,
         ),
         encoding="utf-8",
     )
@@ -91,6 +103,30 @@ def _render_tiles(games: pl.DataFrame, target_date: str) -> str:
 
 def _render_empty() -> str:
     return '<p class="empty">Sin juegos programados en la ventana consultada.</p>'
+
+
+def _render_parlays(parlays: "DailyParlays") -> str:
+    """Tarjetas de combinadas sugeridas por el cerebro pronosticador."""
+    cards = []
+    for parlay in parlays.parlays:
+        legs = "\n".join(
+            f'<li>{html.escape(str(leg["selection"]))}'
+            f' <span class="fair">(p {leg["p"]:.3f})</span></li>'
+            for leg in parlay.legs.iter_rows(named=True)
+        )
+        name = html.escape(parlay.name.capitalize())
+        odds = f"p {parlay.p_combined:.3f} · justa {parlay.fair_odds:.2f}"
+        cards.append(f"""
+      <div class="parlay">
+        <div class="parlay-head"><span class="parlay-name">{name}</span>
+          <span class="parlay-odds">{odds}</span></div>
+        <ul class="parlay-legs">{legs}</ul>
+      </div>""")
+    return f"""
+    <h2 class="section">Combinadas del día</h2>
+    <div class="parlays">{"".join(cards)}</div>
+    <p class="parlay-note">Una pierna por juego. La cuota justa es el umbral:
+    la combinada solo tiene valor si el book paga más.</p>"""
 
 
 def _render_games(games: pl.DataFrame) -> str:
@@ -198,6 +234,19 @@ tbody tr:hover {{ background: color-mix(in srgb, var(--track) 45%, transparent);
 .home-dot::before {{ background: var(--home); }}
 .away-dot::before {{ background: var(--away); }}
 .empty {{ color: var(--text-2); padding: 32px; text-align: center; }}
+.section {{ font-size: 15px; font-weight: 650; margin: 20px 0 10px; }}
+.parlays {{ display: flex; gap: 12px; flex-wrap: wrap; }}
+.parlay {{ background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 16px; min-width: 260px; flex: 1 1 260px; }}
+.parlay-head {{ display: flex; justify-content: space-between; gap: 8px;
+  margin-bottom: 8px; }}
+.parlay-name {{ font-weight: 650; }}
+.parlay-odds {{ color: var(--text-2); font-size: 12px;
+  font-variant-numeric: tabular-nums; }}
+.parlay-legs {{ margin: 0; padding-left: 18px; }}
+.parlay-legs li {{ margin: 2px 0; }}
+.parlay-note {{ color: var(--muted); font-size: 12px; margin-top: 8px;
+  max-width: 72ch; }}
 footer {{ color: var(--muted); font-size: 12px; margin-top: 14px; max-width: 72ch; }}
 </style>
 </head>
@@ -208,6 +257,7 @@ footer {{ color: var(--muted); font-size: 12px; margin-top: 14px; max-width: 72c
 </header>
 {tiles}
 {body}
+{parlays}
 <footer>Probabilidad de moneyline: ensemble calibrado. Over/under, run line y F5:
 Monte Carlo 10.000 sims sobre el modelo Poisson. La <b>cuota justa</b> (entre
 paréntesis) es el umbral de valor: una apuesta solo tiene EV+ si el book paga MÁS

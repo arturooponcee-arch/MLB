@@ -10,6 +10,7 @@ from pathlib import Path
 
 import polars as pl
 
+from mlb_quant.analysts.brain import DailyParlays, generate_daily_parlays
 from mlb_quant.db import Database
 from mlb_quant.feature_engineering.upcoming import build_upcoming_features
 from mlb_quant.models.ensemble import CalibratedEnsembleWinModel
@@ -45,6 +46,19 @@ def predict_upcoming_games(db: Database, game_date: date, sims: int) -> pl.DataF
     lambdas = poisson.predict_lambdas(upcoming)
     sims_df = simulate_games(lambdas, SimulationConfig(n_sims=sims))
 
+    # Columnas de contexto para los analistas (clima, calidad de abridores);
+    # ausentes si el bloque correspondiente se omitió en el builder.
+    context_cols = [
+        c
+        for c in (
+            "wx_temperature_c",
+            "wx_wind_out",
+            "wx_roof_possible",
+            "home_spq_xera",
+            "away_spq_xera",
+        )
+        if c in upcoming.columns
+    ]
     return (
         upcoming.select(
             "game_pk",
@@ -53,6 +67,7 @@ def predict_upcoming_games(db: Database, game_date: date, sims: int) -> pl.DataF
             "away_team_name",
             "home_probable_pitcher_name",
             "away_probable_pitcher_name",
+            *context_cols,
         )
         .join(win, on="game_pk")
         .join(sims_df, on="game_pk")
@@ -83,6 +98,7 @@ def generate_daily_report(
     """
     games = predict_upcoming_games(db, game_date, sims)
     props = predict_upcoming_strikeouts(db, game_date, line=k_line)
+    parlays = generate_daily_parlays(games, props)
 
     written: list[Path] = []
     stamp = game_date.isoformat()
@@ -113,17 +129,26 @@ def generate_daily_report(
             (1 / (1 - pl.col("p_over"))).round(2).alias("cuota_justa_under"),
         ).sort("p_over", descending=True)
         written += export_frame(props_out, output_dir / f"{stamp}_props_k", formats)
+    parlays_out = parlays.to_frame()
+    if not parlays_out.is_empty():
+        written += export_frame(parlays_out, output_dir / f"{stamp}_combinadas", formats)
 
     summary = output_dir / f"{stamp}_resumen.md"
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary.write_text(_summary_markdown(game_date, games, props, k_line), encoding="utf-8")
+    summary.write_text(
+        _summary_markdown(game_date, games, props, k_line, parlays), encoding="utf-8"
+    )
     written.append(summary)
     logger.info("Reporte diario %s: %d archivos.", stamp, len(written))
     return written
 
 
 def _summary_markdown(
-    game_date: date, games: pl.DataFrame, props: pl.DataFrame, k_line: float
+    game_date: date,
+    games: pl.DataFrame,
+    props: pl.DataFrame,
+    k_line: float,
+    parlays: DailyParlays | None = None,
 ) -> str:
     lines = [f"# Reporte diario MLB Quant — {game_date}", ""]
     if games.is_empty():
@@ -159,7 +184,33 @@ def _summary_markdown(
                 ).sort("p_over", descending=True)
             ),
         ]
+    if parlays is not None and parlays.parlays:
+        lines += _parlays_markdown(parlays)
     lines.append(
         "\n_Cuota justa = 1/p: una apuesta manual solo tiene valor si el book paga más._"
     )
     return "\n".join(lines) + "\n"
+
+
+def _parlays_markdown(parlays: DailyParlays) -> list[str]:
+    """Sección de combinadas sugeridas por el cerebro pronosticador."""
+    lines = ["", "## Combinadas del día", ""]
+    for parlay in parlays.parlays:
+        lines.append(
+            f"**{parlay.name.capitalize()}** — p combinada "
+            f"{parlay.p_combined:.3f}, cuota justa {parlay.fair_odds:.2f}"
+        )
+        for leg in parlay.legs.iter_rows(named=True):
+            lines.append(f"- {leg['selection']} (p {leg['p']:.3f})")
+        lines.append("")
+    if not parlays.notes.is_empty():
+        lines += ["### Notas de analistas", ""]
+        for note in parlays.notes.iter_rows(named=True):
+            where = f" — {note['matchup']}" if note.get("matchup") else ""
+            lines.append(f"- [{note['analyst']}] {note['note']}{where}")
+        lines.append("")
+    lines.append(
+        "_Una pierna por juego (evita correlación). La p combinada asume "
+        "independencia entre juegos; vale solo si el book paga más que la cuota justa._"
+    )
+    return lines
